@@ -25,7 +25,7 @@ button.primary{background:var(--accent);border-color:var(--accent);color:var(--a
 button.danger{color:var(--blocked)}
 button.small{padding:2px 8px;font-size:12px}
 input,select,textarea{padding:5px 8px;border:1px solid var(--line);border-radius:6px;background:var(--bg)}
-main{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.15fr);gap:14px;padding:14px 16px;height:calc(100vh - 54px)}
+main{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.15fr);gap:14px;padding:14px 16px;height:calc(100vh - 54px - var(--bannerH,0px))}
 @media (max-width:900px){main{grid-template-columns:1fr;height:auto}}
 section{background:var(--panel);border:1px solid var(--line);border-radius:10px;display:flex;flex-direction:column;min-height:0}
 section>h2{font-size:14px;margin:0;padding:10px 12px;border-bottom:1px solid var(--line);display:flex;gap:8px;align-items:center}
@@ -37,7 +37,7 @@ section>h2{font-size:14px;margin:0;padding:10px 12px;border-bottom:1px solid var
 .card .id{font-size:11px;color:var(--muted)}
 .card .t{font-weight:600;word-break:break-word}
 .card .o{font-size:12px;color:var(--muted)}
-.s-in-progress{border-left-color:var(--prog)}.s-blocked{border-left-color:var(--blocked)}.s-done{border-left-color:var(--done)}
+.s-in-progress,.s-ready{border-left-color:var(--prog)}.s-blocked{border-left-color:var(--blocked)}.s-done{border-left-color:var(--done)}
 .empty{color:var(--muted);font-size:12px}
 .tabs{display:flex;gap:4px;flex-wrap:wrap}
 .tab{padding:3px 10px;border-radius:6px;font-size:13px}
@@ -70,11 +70,20 @@ dialog::backdrop{background:rgba(0,0,0,.45)}
 .box{border:1px solid var(--line);border-radius:8px;padding:10px;display:grid;gap:8px}
 .box h4{margin:0;font-size:13px}
 details summary{cursor:pointer;color:var(--muted);font-size:12px}
+.arow{display:grid;grid-template-columns:110px minmax(0,1.6fr) 110px 34px;gap:8px;align-items:center}
+.arow.head{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em}
+.arow .mcell{display:flex;gap:6px;min-width:0}.arow .mcell select,.arow .mcell input{flex:1;min-width:0}
+.banner{margin:10px 16px 0;padding:8px 12px;border:1px solid var(--blocked);border-radius:8px;background:var(--panel);display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+.pjrow{display:flex;gap:8px;align-items:center;border:1px solid var(--line);border-radius:6px;padding:6px 8px}
+.pjrow .pth{flex:1;min-width:0;font-size:12px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+code{font:12px ui-monospace,Consolas,monospace}
 </style>
 </head>
 <body>
 <header>
   <h1>Agent-Squad</h1>
+  <select id="projSel" title="Project đang điều khiển"></select>
+  <button id="btnProj" class="small" title="Thêm / quản lý project">+ Project</button>
   <span class="pill"><span id="sdot" class="dot"></span><span id="stext">đang tải…</span></span>
   <span class="spacer"></span>
   <span class="hint" id="cfgSummary"></span>
@@ -82,6 +91,7 @@ details summary{cursor:pointer;color:var(--muted);font-size:12px}
   <button id="btnStart" class="primary">Start agents</button>
   <button id="btnStop" class="danger">Stop</button>
 </header>
+<div id="banner" class="banner" hidden></div>
 
 <main>
   <section>
@@ -141,87 +151,160 @@ details summary{cursor:pointer;color:var(--muted);font-size:12px}
 </dialog>
 
 <dialog id="dlgCfg">
-  <div class="dlg-h"><h3>Chọn agent &amp; model</h3><button id="cfgClose" class="small">Đóng</button></div>
+  <div class="dlg-h"><h3>Chọn agent &amp; model <span class="hint" id="cfgProj"></span></h3><button id="cfgClose" class="small">Đóng</button></div>
   <div class="dlg-b">
-    <div class="box"><h4>Lead (luôn là Claude Code)</h4>
-      <div class="wrow"><span>Model</span><input id="cfgLead" list="m-claude" placeholder="mặc định"><span></span></div>
+    <div class="box"><h4>Lead (nói chuyện với bạn, chia và giao việc)</h4>
+      <div class="arow head"><span>Agent</span><span>Model</span><span>Effort</span><span></span></div>
+      <div id="cfgLead"></div>
     </div>
-    <div class="box"><h4>Workers</h4>
+    <div class="box"><h4>Workers (làm từng task)</h4>
+      <div class="arow head"><span>Agent</span><span>Model</span><span>Effort</span><span></span></div>
       <div id="cfgWorkers" style="display:grid;gap:6px"></div>
-      <div class="row"><button id="cfgAdd" class="small">+ Thêm worker</button>
-        <span class="hint">Để trống model = dùng model mặc định của agent đó. Gõ tên model giống như trong lệnh /model của agent.</span></div>
+      <div class="row"><button id="cfgAdd" class="small">+ Thêm worker</button></div>
     </div>
-    <p class="hint" style="margin:0">Model chỉ áp dụng khi Start. Nếu phiên đang chạy: bấm Stop rồi Start lại.</p>
-    <div class="row"><span class="spacer"></span><button id="cfgSave" class="primary">Lưu</button><button id="cfgSaveStart" class="primary">Lưu &amp; Start</button></div>
+    <p class="hint" style="margin:0">"mặc định" = để agent tự chọn. Chọn "Khác…" để gõ tên model không có trong danh sách (danh sách nằm ở dashboard/catalog.json). Gemini CLI chưa có tuỳ chọn effort. Cấu hình lưu riêng cho từng project và chỉ áp dụng khi Start: nếu phiên đang chạy thì Stop rồi Start lại.</p>
+    <div class="row"><span class="spacer"></span><button id="cfgSave">Lưu</button><button id="cfgSaveStart" class="primary">Lưu &amp; Start</button></div>
   </div>
 </dialog>
 
-<datalist id="m-claude"><option value="opus"><option value="sonnet"><option value="haiku"><option value="claude-opus-5-5"><option value="claude-sonnet-5-5"><option value="claude-haiku-5-5"><option value="claude-fable-5-2"></datalist>
-<datalist id="m-codex"></datalist>
-<datalist id="m-gemini"></datalist>
+<dialog id="dlgProj">
+  <div class="dlg-h"><h3>Project</h3><button id="pjClose" class="small">Đóng</button></div>
+  <div class="dlg-b">
+    <div class="box"><h4>Thêm project</h4>
+      <label><span>Thư mục repo git (trong WSL, ví dụ <code>~/my-app</code>, hoặc đường dẫn Windows <code>D:\Web\my-app</code>)</span><input id="pjPath" placeholder="~/my-app"></label>
+      <label>Tên hiển thị (tuỳ chọn)<input id="pjName" placeholder="my-app"></label>
+      <div class="row"><span class="hint">Nếu repo chưa có AGENTS.md / CLAUDE.md, dashboard sẽ tự tạo (không ghi đè file có sẵn).</span><span class="spacer"></span><button id="pjAdd" class="primary">Thêm</button></div>
+    </div>
+    <div class="box"><h4>Danh sách</h4><div id="pjList" style="display:grid;gap:6px"></div></div>
+    <p class="hint" style="margin:0">Mỗi project có phiên agent riêng, chạy song song được. Nên để repo trong WSL (~/...) thay vì ổ D: cho nhanh.</p>
+  </div>
+</dialog>
 
 <div id="toasts"></div>
 
 <script>
 const $ = (s) => document.querySelector(s);
-const COLS = [['todo','Todo'],['in-progress','Đang làm'],['blocked','Bị chặn'],['done','Xong']];
+const COLS = [['todo','Todo'],['ready','Chờ giao'],['in-progress','Đang làm'],['blocked','Bị chặn'],['done','Xong']];
 const KEYS = [['Enter','Enter'],['Escape','Esc'],['C-c','Ctrl-C'],['Up','↑'],['Down','↓'],['Tab','Tab'],['y','y'],['n','n']];
-const AGENTS = ['codex','claude','gemini'];
-let state = null, win = localGet('win') || 'lead', lastStatus = null, current = null;
+const AGENTS = ['claude','codex','gemini'];
+let catalog = {claude:{models:[],efforts:[]},codex:{models:[],efforts:[]},gemini:{models:[],efforts:[]}};
+let projects = [], proj = localGet('proj') || '';
+let state = null, win = 'lead', lastStatus = null, current = null;
 let attachments = [], leadAttachments = [], attachTarget = 'msg';
 
 function localGet(k){try{return localStorage.getItem('squad.'+k)}catch{return null}}
 function localSet(k,v){try{localStorage.setItem('squad.'+k,v)}catch{}}
 function esc(s){return String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]))}
-function toast(text, kind=''){const d=document.createElement('div');d.className='toast '+kind;d.textContent=text;$('#toasts').append(d);setTimeout(()=>d.remove(),6000)}
+function toast(text, kind=''){const d=document.createElement('div');d.className='toast '+kind;d.textContent=text;$('#toasts').append(d);setTimeout(()=>d.remove(),7000)}
+const withP = (url)=> url + (url.includes('?')?'&':'?') + 'p=' + encodeURIComponent(proj);
 
-async function api(method, url, body){
-  const r = await fetch(url,{method,headers:{'Content-Type':'application/json','X-Squad':'1'},body:body?JSON.stringify(body):undefined});
+async function api(method, url, body, raw){
+  const r = await fetch(withP(url),{method,headers:raw?{'X-Squad':'1'}:{'Content-Type':'application/json','X-Squad':'1'},body:raw?body:(body?JSON.stringify(body):undefined)});
   const j = await r.json().catch(()=>({}));
   if(!r.ok) throw new Error(j.error || j.out || ('HTTP '+r.status));
   return j;
 }
 
+// ---------------------------------------------------------------- project
+async function loadProjects(){
+  const j = await api('GET','/api/projects'); projects = j.projects;
+  if(!projects.some(p=>p.id===proj)) proj = projects[0]?.id || '';
+  $('#projSel').innerHTML = projects.map(p=>`<option value="${esc(p.id)}"${p.id===proj?' selected':''}>${p.running?'● ':''}${esc(p.name)}</option>`).join('');
+  renderProjList();
+}
+function switchProject(id){
+  proj = id; localSet('proj', id); state = null; lastStatus = null; win = localGet('win.'+id) || 'lead';
+  cfg = loadCfg(); $('#cfgSummary').textContent = cfgSummaryText(); delete $('#term').dataset.seen;
+  attachments=[]; leadAttachments=[]; renderChips();
+  refreshState().then(refreshPane);
+}
+$('#projSel').onchange = ()=>switchProject($('#projSel').value);
+function renderProjList(){
+  $('#pjList').innerHTML = projects.map(p=>`<div class="pjrow"><b>${esc(p.name)}</b><span class="pth" title="${esc(p.path)}">${esc(p.path)}${p.exists?'':' (không thấy thư mục)'}</span>
+    <span class="hint">${p.running?'đang chạy':''}</span>
+    <button class="small" data-open="${esc(p.id)}">Mở</button>${projects[0].id===p.id?'':`<button class="small danger" data-del="${esc(p.id)}" title="Bỏ khỏi danh sách (không xoá file)">Bỏ</button>`}</div>`).join('');
+}
+$('#btnProj').onclick = async()=>{await loadProjects().catch(()=>{}); $('#dlgProj').showModal(); $('#pjPath').focus()};
+$('#pjClose').onclick = ()=>$('#dlgProj').close();
+$('#pjList').addEventListener('click',async e=>{
+  const o=e.target.closest('[data-open]'), d=e.target.closest('[data-del]');
+  if(o){$('#dlgProj').close(); switchProject(o.dataset.open); await loadProjects()}
+  if(d){ if(!confirm('Bỏ project này khỏi danh sách? File trong repo không bị xoá.')) return;
+    try{const r=await fetch('/api/projects?p='+encodeURIComponent(d.dataset.del),{method:'DELETE',headers:{'X-Squad':'1'}}); if(!r.ok) throw new Error((await r.json()).error); if(d.dataset.del===proj) proj=''; await loadProjects(); switchProject(proj)}catch(x){toast(x.message,'err')} }
+});
+$('#pjAdd').onclick = async()=>{
+  const path=$('#pjPath').value.trim(); if(!path){toast('Nhập thư mục repo','err'); return}
+  $('#pjAdd').disabled=true;
+  try{
+    const r = await api('POST','/api/projects',{path,name:$('#pjName').value});
+    $('#pjPath').value=''; $('#pjName').value='';
+    toast(`Đã thêm ${r.project.name}` + (r.setup?'\nĐã tạo AGENTS.md, CLAUDE.md, scripts/':'') + (r.needsCommit?'\nCần commit file khung trước khi Start (nút ở thanh cảnh báo).':''),'ok');
+    $('#dlgProj').close(); proj=r.project.id; await loadProjects(); switchProject(proj);
+  }catch(e){toast(e.message,'err')}
+  $('#pjAdd').disabled=false;
+};
+function renderBanner(){
+  const b=$('#banner'); let html='';
+  if(state.missing?.length) html=`Project này thiếu file khung (${esc(state.missing.join(', '))}). <button id="btnScaffold" class="small primary">Tạo file khung</button>`;
+  else if(state.needsCommit) html=`Các file khung (AGENTS.md, CLAUDE.md, scripts/) chưa được commit, nên worker sẽ không thấy chúng. <button id="btnCommit" class="small primary">Commit file khung</button>`;
+  b.innerHTML=html; b.hidden=!html; document.documentElement.style.setProperty('--bannerH', html? (b.offsetHeight+10)+'px':'0px');
+  $('#btnScaffold')?.addEventListener('click',async()=>{try{const r=await api('POST','/api/projects',{path:state.project.path}); toast('Đã tạo file khung (AGENTS.md, CLAUDE.md, scripts/).','ok'); refreshState()}catch(e){toast(e.message,'err')}});
+  $('#btnCommit')?.addEventListener('click',async()=>{try{const r=await api('POST','/api/projects/commit'); toast(r.out||'Đã commit','ok'); refreshState()}catch(e){toast(e.message,'err')}});
+}
+
 // ---------------------------------------------------------------- cấu hình agent & model
 function loadCfg(){
-  try{const c=JSON.parse(localGet('cfg')||'null'); if(c&&Array.isArray(c.workers)) return c}catch{}
-  return {leadModel:'', workers:[{agent:'codex',model:''}]};
+  try{
+    const c=JSON.parse(localGet('cfg.'+proj)||localGet('cfg')||'null');
+    if(c&&Array.isArray(c.workers)){ if(!c.lead) c.lead={agent:'claude',model:c.leadModel||'',effort:''}; return c }
+  }catch{}
+  return {lead:{agent:'claude',model:'',effort:''}, workers:[{agent:'codex',model:'',effort:''}]};
 }
 let cfg = loadCfg();
-const winName = (w)=> w.model ? `${w.agent}-${w.model.replace(/[^A-Za-z0-9_-]/g,'-')}` : w.agent;
-function cfgSummaryText(){return 'lead: claude' + (cfg.leadModel?` (${cfg.leadModel})`:'') + ' · ' + cfg.workers.map(w=>w.agent+(w.model?` (${w.model})`:'')).join(', ')}
-function rememberModel(agent, model){
-  if(!model) return; const k='models.'+agent; const list=JSON.parse(localGet(k)||'[]');
-  if(!list.includes(model)){list.unshift(model); localSet(k, JSON.stringify(list.slice(0,10)))}
+const winName = (w)=>{ const m=(w.model||'').replace(/[^A-Za-z0-9_-]/g,'-'); return !m ? w.agent : m.startsWith(w.agent) ? m : `${w.agent}-${m}` };
+const descr = (a)=> a.agent + ([a.model,a.effort].filter(Boolean).length ? ` (${[a.model,a.effort].filter(Boolean).join(', ')})` : '');
+function cfgSummaryText(){return 'lead: ' + descr(cfg.lead) + ' · workers: ' + cfg.workers.map(descr).join(', ')}
+
+function agentRow(a, i, removable){
+  const cat = catalog[a.agent] || {models:[],efforts:[]};
+  const custom = a.model && !cat.models.includes(a.model);
+  const opts = ['<option value="">mặc định</option>', ...cat.models.map(m=>`<option${m===a.model?' selected':''}>${esc(m)}</option>`), `<option value="__other"${custom?' selected':''}>Khác…</option>`].join('');
+  const eff = cat.efforts.length ? ['<option value="">mặc định</option>', ...cat.efforts.map(e=>`<option${e===a.effort?' selected':''}>${e}</option>`)].join('') : '<option value="">(không có)</option>';
+  return `<div class="arow" data-i="${i}">
+    <select class="ag">${AGENTS.map(x=>`<option value="${x}"${x===a.agent?' selected':''}>${esc(catalog[x]?.label||x)}</option>`).join('')}</select>
+    <span class="mcell"><select class="md">${opts}</select><input class="mdc" placeholder="tên model" value="${custom?esc(a.model):''}"${custom?'':' hidden'}></span>
+    <select class="ef"${cat.efforts.length?'':' disabled'}>${eff}</select>
+    ${removable?'<button class="small danger rm" title="Bỏ worker này">✕</button>':'<span></span>'}</div>`;
 }
-function fillModelLists(){
-  for(const a of ['codex','gemini']){ const list=JSON.parse(localGet('models.'+a)||'[]'); $('#m-'+a).innerHTML=list.map(m=>`<option value="${esc(m)}">`).join('') }
-}
-function renderCfg(){
-  $('#cfgLead').value = cfg.leadModel || '';
-  $('#cfgWorkers').innerHTML = cfg.workers.map((w,i)=>`<div class="wrow" data-i="${i}">
-    <select class="ag">${AGENTS.map(a=>`<option${a===w.agent?' selected':''}>${a}</option>`).join('')}</select>
-    <input class="md" list="m-${esc(w.agent)}" value="${esc(w.model||'')}" placeholder="model mặc định">
-    <button class="small danger rm" title="Bỏ worker này">✕</button></div>`).join('');
+function readRow(r){
+  const md=r.querySelector('.md').value;
+  return {agent:r.querySelector('.ag').value, model: md==='__other' ? r.querySelector('.mdc').value.trim() : md, effort:r.querySelector('.ef').value};
 }
 function readCfgForm(){
-  const workers=[...document.querySelectorAll('#cfgWorkers .wrow')].map(r=>({agent:r.querySelector('.ag').value, model:r.querySelector('.md').value.trim()}));
-  return {leadModel:$('#cfgLead').value.trim(), workers: workers.length?workers:[{agent:'codex',model:''}]};
+  const workers=[...document.querySelectorAll('#cfgWorkers .arow')].map(readRow);
+  return {lead: readRow($('#cfgLead .arow')), workers: workers.length?workers:[{agent:'codex',model:'',effort:''}]};
+}
+function renderCfg(){
+  $('#cfgLead').innerHTML = agentRow(cfg.lead, 0, false);
+  $('#cfgWorkers').innerHTML = cfg.workers.map((w,i)=>agentRow(w,i,true)).join('');
 }
 function saveCfg(){
-  cfg = readCfgForm();
-  const names = cfg.workers.map(winName);
-  if(new Set(names).size!==names.length){toast('Hai worker trùng agent và model. Hãy đổi model của một worker.','err'); return false}
-  for(const w of cfg.workers) rememberModel(w.agent, w.model);
-  localSet('cfg', JSON.stringify(cfg)); fillModelLists(); $('#cfgSummary').textContent = cfgSummaryText(); return true;
+  const c = readCfgForm();
+  const names = c.workers.map(winName);
+  if(new Set(names).size!==names.length){toast('Có hai worker cùng agent và model. Hãy đổi model của một worker.','err'); return false}
+  cfg=c; localSet('cfg.'+proj, JSON.stringify(cfg)); $('#cfgSummary').textContent = cfgSummaryText(); return true;
 }
-$('#btnCfg').onclick = ()=>{fillModelLists(); renderCfg(); $('#dlgCfg').showModal()};
+$('#btnCfg').onclick = ()=>{cfg=loadCfg(); renderCfg(); $('#cfgProj').textContent = '· '+($('#projSel').selectedOptions[0]?.textContent||''); $('#dlgCfg').showModal()};
 $('#cfgClose').onclick = ()=>$('#dlgCfg').close();
-$('#cfgAdd').onclick = ()=>{cfg = readCfgForm(); cfg.workers.push({agent:'codex',model:''}); renderCfg()};
-$('#cfgWorkers').addEventListener('click',e=>{const b=e.target.closest('.rm'); if(!b) return; cfg=readCfgForm(); cfg.workers.splice(+b.closest('.wrow').dataset.i,1); renderCfg()});
-$('#cfgWorkers').addEventListener('change',e=>{if(e.target.classList.contains('ag')) e.target.closest('.wrow').querySelector('.md').setAttribute('list','m-'+e.target.value)});
+$('#cfgAdd').onclick = ()=>{cfg = readCfgForm(); cfg.workers.push({agent:'codex',model:'',effort:''}); renderCfg()};
+$('#dlgCfg').addEventListener('click',e=>{const b=e.target.closest('.rm'); if(!b) return; cfg=readCfgForm(); cfg.workers.splice(+b.closest('.arow').dataset.i,1); renderCfg()});
+$('#dlgCfg').addEventListener('change',e=>{
+  const row=e.target.closest('.arow'); if(!row) return;
+  if(e.target.classList.contains('ag')){ const a=readRow(row); a.model=''; a.effort=''; row.outerHTML = agentRow(a, row.dataset.i, !!row.querySelector('.rm')) }
+  if(e.target.classList.contains('md')){ const c=row.querySelector('.mdc'); c.hidden = e.target.value!=='__other'; if(!c.hidden) c.focus() }
+});
 $('#cfgSave').onclick = ()=>{if(saveCfg()){$('#dlgCfg').close(); toast('Đã lưu. Áp dụng ở lần Start tiếp theo.','ok')}};
-$('#cfgSaveStart').onclick = ()=>{if(saveCfg()){$('#dlgCfg').close(); startAgents()}};
+$('#cfgSaveStart').onclick = async()=>{if(saveCfg()){$('#dlgCfg').close(); if(state?.running){ if(!confirm('Phiên đang chạy. Dừng và Start lại với cấu hình mới?')) return; await api('POST','/api/stop').catch(()=>{}) } startAgents()}};
 
 // ---------------------------------------------------------------- bảng task & window
 function workers(){
@@ -233,7 +316,9 @@ function fillWorkers(sel, pick){sel.innerHTML = workers().map(w=>`<option${w===p
 function renderBoard(){
   const by = Object.fromEntries(COLS.map(([k])=>[k,[]]));
   for(const t of state.tasks){(by[t.status] || by['todo']).push(t)}
-  $('#board').innerHTML = COLS.map(([k,label])=>`<div class="col"><h3>${label} <span>${by[k].length}</span></h3>${
+  const cols = COLS.filter(([k])=>k!=='ready' || by.ready.length);
+  $('#board').style.gridTemplateColumns = `repeat(${cols.length},minmax(0,1fr))`;
+  $('#board').innerHTML = cols.map(([k,label])=>`<div class="col"><h3>${label} <span>${by[k].length}</span></h3>${
     by[k].map(t=>`<div class="card s-${esc(t.status)}" data-id="${esc(t.id)}"><div class="id">${esc(t.id)}</div><div class="t">${esc(t.title||'(không tên)')}</div><div class="o">${esc(t.owner)}${t.status!==k?' · '+esc(t.status):''}</div></div>`).join('') || '<div class="empty">—</div>'
   }</div>`).join('');
 }
@@ -257,16 +342,18 @@ function notifyChanges(){
 }
 
 async function refreshState(){
+  const asked = proj;
   try{
-    state = await api('GET','/api/state');
+    const s = await api('GET','/api/state'); if(asked!==proj) return; state = s;
     $('#sdot').classList.toggle('on', state.running);
-    $('#stext').textContent = state.running ? `phiên "${state.session}" đang chạy · ${state.windows.length} window` : `chưa chạy phiên "${state.session}"`;
-    renderBoard(); renderTabs(); notifyChanges();
+    $('#stext').textContent = state.running ? `đang chạy · ${state.windows.length} window` : `chưa chạy`;
+    $('#stext').parentElement.title = state.project.path + ' · phiên tmux ' + state.session;
+    renderBoard(); renderTabs(); notifyChanges(); renderBanner();
   }catch(e){$('#stext').textContent='mất kết nối tới server'; $('#sdot').classList.remove('on')}
 }
 
 async function refreshPane(){
-  if(!state || !state.running){$('#term').textContent='Chưa có phiên tmux. Bấm "Start agents".';return}
+  if(!state || !state.running){$('#term').textContent='Chưa có phiên agent cho project này. Bấm "Start agents".';return}
   try{
     const {text} = await api('GET','/api/pane/'+encodeURIComponent(win));
     const t=$('#term'); const atBottom = t.scrollTop + t.clientHeight >= t.scrollHeight - 30;
@@ -279,9 +366,7 @@ async function uploadFiles(files, list){
   for(const f of files){
     try{
       const name = f.name || ('paste-'+Date.now()+'.'+((f.type.split('/')[1])||'bin'));
-      const r = await fetch('/api/upload?name='+encodeURIComponent(name),{method:'POST',headers:{'X-Squad':'1'},body:f});
-      const j = await r.json().catch(()=>({}));
-      if(!r.ok) throw new Error(j.error||('HTTP '+r.status));
+      const j = await api('POST','/api/upload?name='+encodeURIComponent(name), f, true);
       list.push({name, path:j.path});
     }catch(e){toast('Không tải được '+(f.name||'file')+': '+e.message,'err')}
   }
@@ -325,12 +410,12 @@ async function openTask(id){
 
 async function startAgents(){
   $('#btnStart').disabled=true;
-  try{const r=await api('POST','/api/start',{leadModel:cfg.leadModel, workers:cfg.workers}); toast(r.out||'Đã start','ok')}catch(e){toast(e.message,'err')}
-  $('#btnStart').disabled=false; refreshState();
+  try{const r=await api('POST','/api/start',{lead:cfg.lead, workers:cfg.workers}); toast(r.out||'Đã start','ok')}catch(e){toast(e.message,'err')}
+  $('#btnStart').disabled=false; await refreshState(); loadProjects().catch(()=>{});
 }
 
 $('#board').addEventListener('click',e=>{const c=e.target.closest('.card'); if(c) openTask(c.dataset.id)});
-$('#tabs').addEventListener('click',e=>{const b=e.target.closest('[data-win]'); if(!b) return; win=b.dataset.win; localSet('win',win); delete $('#term').dataset.seen; renderTabs(); refreshPane()});
+$('#tabs').addEventListener('click',e=>{const b=e.target.closest('[data-win]'); if(!b) return; win=b.dataset.win; localSet('win.'+proj,win); delete $('#term').dataset.seen; renderTabs(); refreshPane()});
 $('#keys').innerHTML = KEYS.map(([k,l])=>`<button class="small" data-key="${k}">${l}</button>`).join('') + '<span class="hint" style="align-self:center">gửi phím vào window đang chọn</span>';
 $('#keys').addEventListener('click',async e=>{const b=e.target.closest('[data-key]'); if(!b) return; try{await api('POST','/api/send',{win,key:b.dataset.key}); setTimeout(refreshPane,300)}catch(x){toast(x.message,'err')}});
 $('#btnSend').onclick = sendMsg;
@@ -338,8 +423,8 @@ $('#msg').addEventListener('keydown',e=>{if(e.key==='Enter'&&!e.shiftKey&&!e.isC
 
 $('#btnStart').onclick = startAgents;
 $('#btnStop').onclick = async()=>{
-  if(!confirm('Dừng toàn bộ phiên tmux (lead và mọi worker)? Cuộc trò chuyện đang mở trong các agent sẽ bị đóng.')) return;
-  try{await api('POST','/api/stop'); toast('Đã dừng phiên','ok')}catch(e){toast(e.message,'err')} refreshState();
+  if(!confirm('Dừng toàn bộ agent của project này (lead và mọi worker)? Cuộc trò chuyện đang mở trong các agent sẽ bị đóng.')) return;
+  try{await api('POST','/api/stop'); toast('Đã dừng phiên','ok')}catch(e){toast(e.message,'err')} await refreshState(); loadProjects().catch(()=>{});
 };
 
 $('#dtClose').onclick = ()=>$('#dlgTask').close();
@@ -359,7 +444,7 @@ $('#lSend').onclick = async()=>{
   try{
     await sendTo('lead', withAttachments(text, leadAttachments));
     $('#lText').value=''; leadAttachments=[]; renderChips(); $('#dlgNew').close();
-    win='lead'; localSet('win',win); renderTabs(); refreshPane(); toast('Đã gửi cho lead. Task sẽ hiện ở bảng khi lead tạo xong.','ok');
+    win='lead'; localSet('win.'+proj,win); renderTabs(); refreshPane(); toast('Đã gửi cho lead. Task sẽ hiện ở bảng khi lead tạo xong.','ok');
   }catch(e){toast(e.message,'err')}
 };
 $('#dnCreate').onclick = async()=>{
@@ -373,11 +458,14 @@ $('#dnCreate').onclick = async()=>{
   }catch(e){toast(e.message,'err')}
 };
 
-$('#cfgSummary').textContent = cfgSummaryText();
-fillModelLists();
-refreshState().then(refreshPane);
-setInterval(refreshState, 3000);
-setInterval(refreshPane, 1500);
+(async()=>{
+  try{ catalog = await (await fetch('/api/catalog')).json() }catch{}
+  try{ await loadProjects() }catch(e){ toast(e.message,'err') }
+  switchProject(proj);
+  setInterval(refreshState, 3000);
+  setInterval(refreshPane, 1500);
+  setInterval(()=>loadProjects().catch(()=>{}), 15000);
+})();
 </script>
 </body>
 </html>

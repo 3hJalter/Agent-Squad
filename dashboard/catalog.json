@@ -1,0 +1,18 @@
+{
+  "_note": "Danh sách model/effort hiện trong bảng chọn. Sửa file này khi agent có model mới. Trong giao diện vẫn có thể chọn 'Khác...' để gõ tay.",
+  "claude": {
+    "label": "Claude Code",
+    "models": ["fable", "opus", "sonnet", "haiku", "claude-fable-5-2", "claude-opus-5-5", "claude-sonnet-5-5", "claude-haiku-5-5"],
+    "efforts": ["low", "medium", "high", "xhigh", "max"]
+  },
+  "codex": {
+    "label": "Codex",
+    "models": ["gpt-6.1-sol", "gpt-6.1-terra", "gpt-6-sol", "gpt-6-luna", "gpt-6-astra", "gpt-6-pro", "gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna"],
+    "efforts": ["low", "medium", "high", "xhigh", "max"]
+  },
+  "gemini": {
+    "label": "Gemini CLI",
+    "models": ["gemini-3.5-flash", "gemini-3.1-pro-preview", "gemini-3-pro-preview", "gemini-3-flash-preview", "gemini-3.1-flash-lite", "gemini-2.5-pro", "gemini-2.5-flash"],
+    "efforts": []
+  }
+}

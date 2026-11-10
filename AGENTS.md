@@ -1,11 +1,11 @@
 # Agent rules (shared by ALL agents: lead and workers)
 
 ## Roles
-- LEAD (Claude Code, tmux window "lead"): the only agent that talks to the human by default.
-  Plans, writes task files, assigns workers, reads task summaries.
-  Does NOT read or edit source code itself; it delegates.
-- WORKERS (tmux windows "codex", optional "gemini"): each works in its own git worktree and
-  branch (agent/<name>) and executes ONE task at a time from .agents/tasks/<ID>.md.
+- LEAD (tmux window "lead"; Claude Code by default, can be Codex or Gemini): the only agent that
+  talks to the human by default. Plans, writes task files, assigns workers, reads task summaries.
+  Does NOT read or edit source code itself; it delegates. Its extra rules are in CLAUDE.md.
+- WORKERS (the other tmux windows, listed in .agents/workers.txt): each works in its own git
+  worktree and branch (agent/<name>) and executes ONE task at a time from .agents/tasks/<ID>.md.
 
 ## Task protocol
 1. Tasks live in .agents/tasks/<ID>.md (copy of _template.md). One owner per task.
