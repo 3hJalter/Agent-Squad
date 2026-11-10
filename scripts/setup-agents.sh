@@ -84,6 +84,9 @@ put .agents/tasks/_template.md <<'EOF'
 # T-XXX: <short title>
 Status: todo
 Owner: codex
+Category: <short label>
+Created by: lead
+Parent: none
 
 ## Goal
 <one or two sentences>
@@ -190,6 +193,10 @@ for spec in $WORKERS; do
   tmux new-window -t "$SESSION" -n "$w" -c "$WT" "${ENVS[@]}" "$(cmd_for worker "$w"); exec bash"
   echo "$w  ($agent${model:+, model $model}${effort:+, effort $effort})" >> "$ROOT/.agents/workers.txt"
 done
+# phân cấp mặc định (mọi worker dưới lead); chỉ tạo khi chưa có, sửa tay để thêm cấp
+if [ ! -f "$ROOT/.agents/hierarchy.txt" ]; then
+  sed 's/[[:space:]].*//; /^$/d; s/$/ <- lead/' "$ROOT/.agents/workers.txt" > "$ROOT/.agents/hierarchy.txt"
+fi
 tmux new-window -d -t "$SESSION" -n watch -c "$ROOT" "${ENVS[@]}" "'$HERE/watch-tasks.sh'; exec bash"
 tmux select-window -t "$SESSION:lead"
 echo "Xong. Vào bằng: tmux attach -t $SESSION   (Ctrl-b n/p: đổi window, Ctrl-b d: thoát ra)"
@@ -204,6 +211,11 @@ HERE="$(cd "$(dirname "$0")" && pwd)"
 ROOT="$(cd "${AGENTS_ROOT:-$HERE/..}" && pwd)"
 F="$ROOT/.agents/tasks/$ID.md"
 [ -f "$F" ] || { echo "Không có $F"; exit 1; }
+field() { sed -n "s/^$1:[[:space:]]*//p" "$2" | head -n1 | tr -d '\r[:space:]'; }
+# phân cấp: .agents/hierarchy.txt, mỗi dòng "<tên> <- <cha>"; thiếu file/dòng = cha là lead
+parent_of() { local p; p="$(sed -n "s/^[[:space:]]*$1[[:space:]]*<-[[:space:]]*\([^[:space:]]*\).*/\1/p" "$ROOT/.agents/hierarchy.txt" 2>/dev/null | head -n1)"; echo "${p:-lead}"; }
+CREATOR="$(field 'Created by' "$F")"; CREATOR="${CREATOR:-lead}"
+[ "$(parent_of "$W")" = "$CREATOR" ] || { echo "Từ chối: $CREATOR không phải cấp trên trực tiếp của $W (cha: $(parent_of "$W")) trong .agents/hierarchy.txt"; exit 1; }
 tmux list-windows -t "$SESSION" -F '#W' 2>/dev/null | grep -qx -- "$W" || { echo "Không có window $W trong phiên $SESSION"; exit 1; }
 sed -i "s/^Owner:.*/Owner: $W/; s/^Status:.*/Status: in-progress/" "$F"
 BASE="$(git -C "$ROOT" branch --show-current 2>/dev/null || true)"
@@ -216,12 +228,17 @@ EOF
 
 put scripts/notify.sh <<'EOF'
 #!/usr/bin/env bash
-# Báo lead về một task: scripts/notify.sh T-001 (watch-tasks.sh tự gọi; cũng gọi tay được)
+# Báo người tạo task (dòng "Created by:", mặc định lead): scripts/notify.sh T-001
+# (watch-tasks.sh tự gọi; cũng gọi tay được)
 set -euo pipefail
 ID="${1:?task id}"; SESSION="${SESSION:-agents}"
-tmux send-keys -t "$SESSION:lead" -l "Worker updated $ID. Read only its Status and Result in .agents/tasks/$ID.md, then report to me in 3 lines max."
+HERE="$(cd "$(dirname "$0")" && pwd)"
+ROOT="$(cd "${AGENTS_ROOT:-$HERE/..}" && pwd)"
+TO="$(sed -n 's/^Created by:[[:space:]]*//p' "$ROOT/.agents/tasks/$ID.md" 2>/dev/null | head -n1 | tr -d '\r[:space:]')"
+TO="${TO:-lead}"
+tmux send-keys -t "$SESSION:$TO" -l "Worker updated $ID. Read only its Status and Result in .agents/tasks/$ID.md, then report to me in 3 lines max."
 sleep 0.4
-tmux send-keys -t "$SESSION:lead" Enter
+tmux send-keys -t "$SESSION:$TO" Enter
 EOF
 
 put scripts/watch-tasks.sh <<'EOF'

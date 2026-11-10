@@ -82,6 +82,10 @@ for spec in $WORKERS; do
   tmux new-window -t "$SESSION" -n "$w" -c "$WT" "${ENVS[@]}" "$(cmd_for worker "$w"); exec bash"
   echo "$w  ($agent${model:+, model $model}${effort:+, effort $effort})" >> "$ROOT/.agents/workers.txt"
 done
+# phân cấp mặc định (mọi worker dưới lead); chỉ tạo khi chưa có, sửa tay để thêm cấp
+if [ ! -f "$ROOT/.agents/hierarchy.txt" ]; then
+  sed 's/[[:space:]].*//; /^$/d; s/$/ <- lead/' "$ROOT/.agents/workers.txt" > "$ROOT/.agents/hierarchy.txt"
+fi
 tmux new-window -d -t "$SESSION" -n watch -c "$ROOT" "${ENVS[@]}" "'$HERE/watch-tasks.sh'; exec bash"
 tmux select-window -t "$SESSION:lead"
 echo "Xong. Vào bằng: tmux attach -t $SESSION   (Ctrl-b n/p: đổi window, Ctrl-b d: thoát ra)"
