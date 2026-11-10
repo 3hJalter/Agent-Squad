@@ -221,6 +221,16 @@ module.exports = function setupChat({ on, send, readBody, getCtx, loadProjects, 
     };
   }
 
+  // Dừng ngay: SIGTERM cả nhóm tiến trình, sau 2 giây còn sống thì SIGKILL
+  function kill(L) {
+    const c = L.child;
+    if (!c || c.exitCode !== null) return;
+    L.stopped = true;
+    const sig = (s) => { try { process.kill(-c.pid, s); } catch { try { c.kill(s); } catch { /* đã thoát */ } } };
+    sig('SIGTERM');
+    setTimeout(() => { if (c.exitCode === null && c.signalCode === null) sig('SIGKILL'); }, 2000);
+  }
+
   // ------------------------------------------------------------ chạy một lượt
   function enqueue(ctx, name, text, display) {
     const k = key(ctx, name);
@@ -243,7 +253,8 @@ module.exports = function setupChat({ on, send, readBody, getCtx, loadProjects, 
     const parse = makeParser(a.agent, msg, (sid) => { const s2 = loadState(ctx); s2.sessions[name] = sid; saveState(ctx, s2); });
     let child;
     try {
-      child = spawn(cmd, args, { cwd: a.cwd, env: process.env, stdio: [stdin ? 'pipe' : 'ignore', 'pipe', 'pipe'] });
+      // detached: agent và mọi lệnh con của nó cùng một nhóm tiến trình, để nút Dừng tắt được hết
+      child = spawn(cmd, args, { cwd: a.cwd, env: process.env, detached: true, stdio: [stdin ? 'pipe' : 'ignore', 'pipe', 'pipe'] });
     } catch (e) { msg.error = e.message; return finish(); }
     L.child = child;
     if (stdin) { child.stdin.on('error', () => {}); child.stdin.end(stdin); }
@@ -258,7 +269,7 @@ module.exports = function setupChat({ on, send, readBody, getCtx, loadProjects, 
       }
     });
     child.stderr.on('data', (d) => { errTail = (errTail + d).slice(-2000); });
-    const timer = setTimeout(() => child.kill('SIGTERM'), MAX_TURN_MS);
+    const timer = setTimeout(() => kill(L), MAX_TURN_MS);
     child.on('error', (e) => { msg.error = e.code === 'ENOENT' ? `Không tìm thấy lệnh "${cmd}". Agent này đã được cài trong WSL chưa?` : e.message; });
     child.on('close', (code, signal) => {
       clearTimeout(timer);
@@ -321,7 +332,7 @@ module.exports = function setupChat({ on, send, readBody, getCtx, loadProjects, 
     const st = loadState(ctx);
     for (const n of Object.keys(st.agents || {})) {
       const L = live.get(key(ctx, n));
-      if (L) { L.queue = []; if (L.child) { L.stopped = true; L.child.kill('SIGTERM'); } }
+      if (L) { L.queue = []; if (L.child) { L.stopped = true; kill(L); } }
     }
     if (st.active) { st.active = false; saveState(ctx, st); }
   }
@@ -396,7 +407,7 @@ module.exports = function setupChat({ on, send, readBody, getCtx, loadProjects, 
   on('POST', /^\/api\/chat\/([^/]+)\/stop$/, (req, res, m, url) => {
     const [name] = m; const ctx = getCtx(url);
     const L = live.get(key(ctx, name));
-    if (L) { L.queue = []; if (L.child) { L.stopped = true; L.child.kill('SIGTERM'); } }
+    if (L) { L.queue = []; if (L.child) { L.stopped = true; kill(L); } }
     send(res, 200, { ok: true });
   });
   on('POST', /^\/api\/chat\/([^/]+)\/reset$/, (req, res, m, url) => {
@@ -442,7 +453,7 @@ module.exports = function setupChat({ on, send, readBody, getCtx, loadProjects, 
   // trước khi dashboard khởi động lại: dừng các lượt đang chạy (lịch sử và trạng thái chat giữ nguyên)
   function killAll() {
     let n = 0;
-    for (const L of live.values()) { L.queue = []; if (L.child) { L.stopped = true; L.child.kill('SIGTERM'); n++; } }
+    for (const L of live.values()) { L.queue = []; if (L.child) { L.stopped = true; kill(L); n++; } }
     return n;
   }
   const busyCount = () => [...live.values()].filter((L) => L.child).length;
