@@ -9,6 +9,10 @@ Khung điều phối nhiều agent (lead + workers) để tiết kiệm token.
 - `scripts/watch-tasks.sh`: chạy nền trong window `watch`, tự báo lead khi một task chuyển sang `done`/`blocked`
   (worker chỉ cần sửa dòng `Status:`, không phải tự gọi tmux, vì sandbox của Codex có thể chặn).
   `scripts/notify.sh <ID>` vẫn dùng được để báo tay.
+- `scripts/dashboard.sh` (Windows: `windows/5-dashboard.bat`): web dashboard ở http://localhost:7070.
+  Xem bảng task theo Status, tạo task và giao cho worker, sửa file task, xem màn hình từng window
+  tmux (lead, codex, ...) và gõ lệnh/phím vào đó, Start/Stop phiên agents. Chỉ cần Node, không cài gói npm.
+  Điều khiển repo khác: `REPO=~/proj scripts/dashboard.sh`.
 
 Chạy (trong WSL2/Linux, đã cài tmux, claude, codex):
 

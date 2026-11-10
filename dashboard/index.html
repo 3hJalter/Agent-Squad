@@ -1,0 +1,242 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Agent-Squad</title>
+<style>
+:root{--bg:#f6f7f9;--panel:#fff;--line:#dfe3e8;--text:#1d2329;--muted:#66717d;--accent:#2f6fde;--accent-text:#fff;
+  --todo:#8a94a0;--prog:#2f6fde;--blocked:#d4462f;--done:#2e9d5b;--term:#11151a;--term-text:#d6dde4}
+@media (prefers-color-scheme:dark){:root{--bg:#0f1216;--panel:#171b21;--line:#2a3039;--text:#e4e8ec;--muted:#8d97a3;
+  --accent:#5b8ef0;--term:#0a0c0f;--term-text:#cfd6dd}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--text);font:14px/1.45 system-ui,-apple-system,"Segoe UI",sans-serif}
+header{display:flex;flex-wrap:wrap;gap:10px;align-items:center;padding:10px 16px;border-bottom:1px solid var(--line);background:var(--panel)}
+header h1{font-size:16px;margin:0 8px 0 0}
+.pill{display:inline-flex;align-items:center;gap:6px;padding:2px 10px;border-radius:99px;border:1px solid var(--line);font-size:12px;color:var(--muted)}
+.dot{width:8px;height:8px;border-radius:50%;background:var(--todo)}
+.dot.on{background:var(--done)}
+.spacer{flex:1}
+button,select,input,textarea{font:inherit;color:inherit}
+button{padding:5px 12px;border-radius:6px;border:1px solid var(--line);background:var(--panel);cursor:pointer}
+button:hover{border-color:var(--accent)}
+button.primary{background:var(--accent);border-color:var(--accent);color:var(--accent-text)}
+button.danger{color:var(--blocked)}
+button.small{padding:2px 8px;font-size:12px}
+input,select,textarea{padding:5px 8px;border:1px solid var(--line);border-radius:6px;background:var(--bg)}
+main{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.15fr);gap:14px;padding:14px 16px;height:calc(100vh - 54px)}
+@media (max-width:900px){main{grid-template-columns:1fr;height:auto}}
+section{background:var(--panel);border:1px solid var(--line);border-radius:10px;display:flex;flex-direction:column;min-height:0}
+section>h2{font-size:14px;margin:0;padding:10px 12px;border-bottom:1px solid var(--line);display:flex;gap:8px;align-items:center}
+.board{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;padding:10px;overflow:auto;flex:1}
+@media (max-width:600px){.board{grid-template-columns:1fr 1fr}}
+.col h3{font-size:12px;text-transform:uppercase;letter-spacing:.04em;color:var(--muted);margin:2px 0 8px;display:flex;gap:6px;align-items:center}
+.card{border:1px solid var(--line);border-left:3px solid var(--todo);border-radius:6px;padding:7px 8px;margin-bottom:7px;cursor:pointer;background:var(--bg)}
+.card:hover{border-color:var(--accent)}
+.card .id{font-size:11px;color:var(--muted)}
+.card .t{font-weight:600;word-break:break-word}
+.card .o{font-size:12px;color:var(--muted)}
+.s-in-progress{border-left-color:var(--prog)}.s-blocked{border-left-color:var(--blocked)}.s-done{border-left-color:var(--done)}
+.empty{color:var(--muted);font-size:12px}
+.tabs{display:flex;gap:4px;flex-wrap:wrap}
+.tab{padding:3px 10px;border-radius:6px;font-size:13px}
+.tab.sel{background:var(--accent);color:var(--accent-text);border-color:var(--accent)}
+pre.term{flex:1;margin:0;padding:10px 12px;background:var(--term);color:var(--term-text);overflow:auto;font:12.5px/1.35 ui-monospace,Consolas,monospace;white-space:pre-wrap;word-break:break-word;min-height:200px}
+.sendbar{display:flex;gap:6px;padding:8px;border-top:1px solid var(--line);flex-wrap:wrap}
+.sendbar textarea{flex:1;min-width:200px;resize:vertical;height:38px}
+.keys{display:flex;gap:4px;flex-wrap:wrap;padding:0 8px 8px}
+dialog{border:1px solid var(--line);border-radius:10px;background:var(--panel);color:var(--text);width:min(760px,94vw);padding:0}
+dialog::backdrop{background:rgba(0,0,0,.45)}
+.dlg-h{display:flex;align-items:center;gap:8px;padding:10px 14px;border-bottom:1px solid var(--line)}
+.dlg-h h3{margin:0;font-size:15px;flex:1}
+.dlg-b{padding:12px 14px;display:grid;gap:10px}
+.dlg-b label{display:grid;gap:4px;font-size:12px;color:var(--muted)}
+.dlg-b textarea{min-height:60px;resize:vertical;color:var(--text)}
+.dlg-b textarea.big{min-height:360px;font:12.5px/1.4 ui-monospace,Consolas,monospace}
+.row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+#toasts{position:fixed;right:16px;bottom:16px;display:grid;gap:8px;z-index:9}
+.toast{background:var(--panel);border:1px solid var(--line);border-left:4px solid var(--accent);border-radius:8px;padding:8px 12px;max-width:360px;box-shadow:0 4px 16px rgba(0,0,0,.15);white-space:pre-wrap}
+.toast.err{border-left-color:var(--blocked)}.toast.ok{border-left-color:var(--done)}
+.hint{font-size:12px;color:var(--muted)}
+</style>
+</head>
+<body>
+<header>
+  <h1>Agent-Squad</h1>
+  <span class="pill"><span id="sdot" class="dot"></span><span id="stext">đang tải…</span></span>
+  <span class="spacer"></span>
+  <input id="workers" size="14" title="Các worker khi Start (cách nhau bằng dấu cách)">
+  <button id="btnStart" class="primary">Start agents</button>
+  <button id="btnStop" class="danger">Stop</button>
+</header>
+
+<main>
+  <section>
+    <h2>Tasks <span class="spacer"></span><button id="btnNew" class="primary small">+ Task mới</button></h2>
+    <div class="board" id="board"></div>
+  </section>
+
+  <section>
+    <h2><span class="tabs" id="tabs"></span><span class="spacer"></span><label class="hint"><input type="checkbox" id="follow" checked> tự cuộn</label></h2>
+    <pre class="term" id="term">Chưa có phiên tmux. Bấm "Start agents".</pre>
+    <div class="sendbar">
+      <textarea id="msg" placeholder="Nhắn cho window đang chọn (Enter để gửi, Shift+Enter xuống dòng)"></textarea>
+      <button id="btnSend" class="primary">Gửi</button>
+    </div>
+    <div class="keys" id="keys"></div>
+  </section>
+</main>
+
+<dialog id="dlgTask">
+  <div class="dlg-h"><h3 id="dtTitle"></h3>
+    <select id="dtWorker"></select><button id="dtAssign" class="primary small">Giao</button>
+    <button id="dtClose" class="small">Đóng</button></div>
+  <div class="dlg-b">
+    <textarea id="dtText" class="big" spellcheck="false"></textarea>
+    <div class="row"><button id="dtSave" class="primary">Lưu</button><span class="hint">Sửa trực tiếp file .agents/tasks/<span id="dtId"></span>.md. Sửa khi worker đang làm thì nhớ ghi vào "Changes by human".</span></div>
+  </div>
+</dialog>
+
+<dialog id="dlgNew">
+  <div class="dlg-h"><h3>Task mới</h3><button id="dnClose" class="small">Đóng</button></div>
+  <div class="dlg-b">
+    <label>Tiêu đề<input id="nTitle"></label>
+    <label>Goal<textarea id="nGoal"></textarea></label>
+    <label>Files you may edit (mỗi dòng một đường dẫn)<textarea id="nFiles"></textarea></label>
+    <label>Context (mỗi dòng một file)<textarea id="nContext"></textarea></label>
+    <label>Done when (mỗi dòng một lệnh kiểm tra)<textarea id="nDone">bash -n scripts/*.sh</textarea></label>
+    <div class="row">Worker <select id="nOwner"></select>
+      <label style="display:flex;gap:6px;align-items:center;color:var(--text)"><input type="checkbox" id="nAssign" checked> giao ngay</label>
+      <span class="spacer"></span><button id="dnCreate" class="primary">Tạo task</button></div>
+    <p class="hint">Mẹo: thay vì tự viết task, có thể nhắn yêu cầu cho window <b>lead</b> để Claude chia task và giao giúp.</p>
+  </div>
+</dialog>
+
+<div id="toasts"></div>
+
+<script>
+const $ = (s) => document.querySelector(s);
+const COLS = [['todo','Todo'],['in-progress','Đang làm'],['blocked','Bị chặn'],['done','Xong']];
+const KEYS = [['Enter','Enter'],['Escape','Esc'],['C-c','Ctrl-C'],['Up','↑'],['Down','↓'],['Tab','Tab'],['y','y'],['n','n']];
+let state = null, win = localGet('win') || 'lead', lastStatus = null, current = null;
+
+function localGet(k){try{return localStorage.getItem('squad.'+k)}catch{return null}}
+function localSet(k,v){try{localStorage.setItem('squad.'+k,v)}catch{}}
+function esc(s){return String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]))}
+function toast(text, kind=''){const d=document.createElement('div');d.className='toast '+kind;d.textContent=text;$('#toasts').append(d);setTimeout(()=>d.remove(),6000)}
+
+async function api(method, url, body){
+  const r = await fetch(url,{method,headers:{'Content-Type':'application/json','X-Squad':'1'},body:body?JSON.stringify(body):undefined});
+  const j = await r.json().catch(()=>({}));
+  if(!r.ok) throw new Error(j.error || j.out || ('HTTP '+r.status));
+  return j;
+}
+
+function workers(){
+  const fromSession = state && state.running ? state.windows.map(w=>w.name).filter(n=>!['lead','watch'].includes(n)) : [];
+  const list = fromSession.length ? fromSession : ($('#workers').value || state?.defaultWorkers || 'codex').split(/\s+/).filter(Boolean);
+  return [...new Set(list)];
+}
+function fillWorkers(sel, pick){sel.innerHTML = workers().map(w=>`<option${w===pick?' selected':''}>${esc(w)}</option>`).join('')}
+
+function renderBoard(){
+  const by = Object.fromEntries(COLS.map(([k])=>[k,[]]));
+  for(const t of state.tasks){(by[t.status] || by['todo']).push(t)}
+  $('#board').innerHTML = COLS.map(([k,label])=>`<div class="col"><h3>${label} <span>${by[k].length}</span></h3>${
+    by[k].map(t=>`<div class="card s-${esc(t.status)}" data-id="${esc(t.id)}"><div class="id">${esc(t.id)}</div><div class="t">${esc(t.title||'(không tên)')}</div><div class="o">${esc(t.owner)}${t.status!==k?' · '+esc(t.status):''}</div></div>`).join('') || '<div class="empty">—</div>'
+  }</div>`).join('');
+}
+
+function renderTabs(){
+  const wins = state.running ? state.windows : [];
+  if(wins.length && !wins.some(w=>w.name===win)) win = wins[0].name;
+  $('#tabs').innerHTML = wins.map(w=>`<button class="tab small${w.name===win?' sel':''}" data-win="${esc(w.name)}">${esc(w.name)}</button>`).join('') || '<span class="hint">Agents</span>';
+}
+
+function notifyChanges(){
+  const now = Object.fromEntries(state.tasks.map(t=>[t.id,t.status]));
+  if(lastStatus){
+    for(const t of state.tasks){
+      if(lastStatus[t.id] && lastStatus[t.id]!==t.status && (t.status==='done'||t.status==='blocked')){
+        toast(`${t.id} → ${t.status}\n${t.title}${t.result?'\n'+t.result:''}`, t.status==='done'?'ok':'err');
+      }
+    }
+  }
+  lastStatus = now;
+}
+
+async function refreshState(){
+  try{
+    state = await api('GET','/api/state');
+    $('#sdot').classList.toggle('on', state.running);
+    $('#stext').textContent = state.running ? `phiên "${state.session}" đang chạy · ${state.windows.length} window` : `chưa chạy phiên "${state.session}"`;
+    if(!$('#workers').value) $('#workers').value = localGet('workers') || state.defaultWorkers;
+    renderBoard(); renderTabs(); notifyChanges();
+  }catch(e){$('#stext').textContent='mất kết nối tới server'; $('#sdot').classList.remove('on')}
+}
+
+async function refreshPane(){
+  if(!state || !state.running){$('#term').textContent='Chưa có phiên tmux. Bấm "Start agents".';return}
+  try{
+    const {text} = await api('GET','/api/pane/'+encodeURIComponent(win));
+    const t=$('#term'); const atBottom = t.scrollTop + t.clientHeight >= t.scrollHeight - 30;
+    if(t.textContent!==text){t.textContent=text; if($('#follow').checked && atBottom || $('#follow').checked && !t.dataset.seen) t.scrollTop=t.scrollHeight; t.dataset.seen=1}
+  }catch(e){$('#term').textContent=e.message}
+}
+
+async function sendMsg(){
+  const text = $('#msg').value; if(!text.trim()) return;
+  try{await api('POST','/api/send',{win,text}); $('#msg').value=''; setTimeout(refreshPane,600)}catch(e){toast(e.message,'err')}
+}
+
+async function openTask(id){
+  try{
+    const {text} = await api('GET','/api/task/'+id);
+    current = id; $('#dtId').textContent=id; $('#dtTitle').textContent=id; $('#dtText').value=text;
+    const owner = (text.match(/^Owner:\s*(.*)$/m)||[])[1]||''; fillWorkers($('#dtWorker'), owner.trim());
+    $('#dlgTask').showModal();
+  }catch(e){toast(e.message,'err')}
+}
+
+$('#board').addEventListener('click',e=>{const c=e.target.closest('.card'); if(c) openTask(c.dataset.id)});
+$('#tabs').addEventListener('click',e=>{const b=e.target.closest('[data-win]'); if(!b) return; win=b.dataset.win; localSet('win',win); delete $('#term').dataset.seen; renderTabs(); refreshPane()});
+$('#keys').innerHTML = KEYS.map(([k,l])=>`<button class="small" data-key="${k}">${l}</button>`).join('') + '<span class="hint" style="align-self:center">gửi phím vào window đang chọn</span>';
+$('#keys').addEventListener('click',async e=>{const b=e.target.closest('[data-key]'); if(!b) return; try{await api('POST','/api/send',{win,key:b.dataset.key}); setTimeout(refreshPane,300)}catch(x){toast(x.message,'err')}});
+$('#btnSend').onclick = sendMsg;
+$('#msg').addEventListener('keydown',e=>{if(e.key==='Enter'&&!e.shiftKey&&!e.isComposing){e.preventDefault();sendMsg()}});
+$('#workers').addEventListener('change',()=>localSet('workers',$('#workers').value));
+
+$('#btnStart').onclick = async()=>{
+  $('#btnStart').disabled=true;
+  try{const r=await api('POST','/api/start',{workers:$('#workers').value}); toast(r.out||'Đã start','ok')}catch(e){toast(e.message,'err')}
+  $('#btnStart').disabled=false; refreshState();
+};
+$('#btnStop').onclick = async()=>{
+  if(!confirm('Dừng toàn bộ phiên tmux (lead và mọi worker)? Cuộc trò chuyện đang mở trong các agent sẽ bị đóng.')) return;
+  try{await api('POST','/api/stop'); toast('Đã dừng phiên','ok')}catch(e){toast(e.message,'err')} refreshState();
+};
+
+$('#dtClose').onclick = ()=>$('#dlgTask').close();
+$('#dtSave').onclick = async()=>{try{await api('PUT','/api/task/'+current,{text:$('#dtText').value}); toast('Đã lưu '+current,'ok'); refreshState()}catch(e){toast(e.message,'err')}};
+$('#dtAssign').onclick = async()=>{
+  try{const r=await api('POST','/api/assign',{id:current,worker:$('#dtWorker').value}); toast(r.out,'ok'); $('#dlgTask').close(); refreshState()}catch(e){toast(e.message,'err')}
+};
+
+$('#btnNew').onclick = ()=>{fillWorkers($('#nOwner'), workers()[0]); $('#dlgNew').showModal(); $('#nTitle').focus()};
+$('#dnClose').onclick = ()=>$('#dlgNew').close();
+$('#dnCreate').onclick = async()=>{
+  const body={title:$('#nTitle').value,goal:$('#nGoal').value,files:$('#nFiles').value,context:$('#nContext').value,done:$('#nDone').value,owner:$('#nOwner').value,assign:$('#nAssign').checked && !!state?.running};
+  try{
+    const r = await api('POST','/api/task',body);
+    toast(`Đã tạo ${r.id}` + (r.assigned ? `\n${r.assigned.out}` : (body.assign===false&&$('#nAssign').checked?'\n(chưa giao vì phiên chưa chạy)':'')), r.assigned && !r.assigned.ok ? 'err':'ok');
+    for(const id of ['#nTitle','#nGoal','#nFiles','#nContext']) $(id).value='';
+    $('#dlgNew').close(); refreshState();
+  }catch(e){toast(e.message,'err')}
+};
+
+refreshState().then(refreshPane);
+setInterval(refreshState, 3000);
+setInterval(refreshPane, 1500);
+</script>
+</body>
+</html>
