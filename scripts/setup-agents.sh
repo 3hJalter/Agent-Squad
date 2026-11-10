@@ -1,0 +1,163 @@
+#!/usr/bin/env bash
+# setup-agents.sh
+# Dựng khung "lead + workers" trong một repo git (chạy trong WSL2 / Linux).
+# Dùng:  cd ~/proj && bash /đường/dẫn/setup-agents.sh
+# An toàn: file nào đã tồn tại sẽ KHÔNG bị ghi đè.
+set -euo pipefail
+
+[ -d .git ] || { echo "Lỗi: chạy trong thư mục gốc của repo git (chạy 'git init' trước)."; exit 1; }
+
+put() { # put <path> : ghi stdin vào file nếu chưa có
+  if [ -e "$1" ]; then echo "bỏ qua  $1 (đã có)"; cat >/dev/null
+  else mkdir -p "$(dirname "$1")"; cat > "$1"; echo "đã tạo  $1"; fi
+}
+
+mkdir -p .agents/tasks .agents/handoff scripts
+
+# .agents/ chứa trạng thái làm việc, không commit (các worktree sẽ symlink tới đây)
+touch .gitignore
+rg -qx '\.agents/' .gitignore 2>/dev/null || grep -qx '\.agents/' .gitignore || echo '.agents/' >> .gitignore
+
+# ---------------------------------------------------------------- AGENTS.md
+put AGENTS.md <<'EOF'
+# Agent rules (shared by ALL agents: lead and workers)
+
+## Roles
+- LEAD (Claude Code, tmux window "lead"): the only agent that talks to the human by default.
+  Plans, writes task files, assigns workers, reads task summaries.
+  Does NOT read or edit source code itself; it delegates.
+- WORKERS (tmux windows "codex", optional "gemini"): each works in its own git worktree and
+  branch (agent/<name>) and executes ONE task at a time from .agents/tasks/<ID>.md.
+
+## Task protocol
+1. Tasks live in .agents/tasks/<ID>.md (copy of _template.md). One owner per task.
+2. Workers read ONLY the task file and the files in its scope. Do not explore the whole repo.
+3. Edit only the files listed under "Files you may edit". If you need others: stop, write the
+   question under "Notes / questions", set Status: blocked, run scripts/notify.sh <ID>.
+4. When finished: run the checks listed in the task, fill "Result" (max 5 lines: what changed,
+   files, check outcome), set Status: done, commit on your branch, then run
+   scripts/notify.sh <ID>.
+5. DIRECT INSTRUCTIONS FROM THE HUMAN: if the human talks to you directly and changes anything,
+   first append one line to "Changes by human" in the task file (date, change, reason), then
+   proceed. The lead must never be unaware of a change.
+6. Be terse in chat. Details go into the task file, not the conversation.
+
+## Cost rules
+- Keep context small. Never paste large files into chat.
+- Search with ripgrep (rg); fall back to grep only if rg fails.
+- The lead reads only Status and Result of a task, not diffs, unless the human asks.
+- Do not poll or re-check tasks that are not marked done. Do not loop on failures: after 2 failed
+  attempts, set Status: blocked and explain in Notes.
+
+## Project conventions
+(Fill in: language/framework, how to run tests/lint, code style, folders to avoid.)
+EOF
+
+# ---------------------------------------------------------------- CLAUDE.md
+put CLAUDE.md <<'EOF'
+@AGENTS.md
+
+# Extra rules for the LEAD (Claude Code)
+- You are the lead. Turn the human's request into small, self-contained tasks.
+- Create a task: copy .agents/tasks/_template.md to .agents/tasks/T-<next number>.md and fill
+  Goal, Files you may edit, Context (link files, do not paste), Done when.
+- Assign: run `scripts/assign.sh T-<n> codex` (or gemini). Then STOP and tell the human in one
+  line which task went to whom. Do not wait, poll or watch the worker.
+- When a worker notifies you, read only that task's Status and Result, then report in <= 3 lines.
+- Give each task a disjoint set of files; never assign overlapping files to two workers.
+- If the human says they changed something directly with a worker, re-read that task file
+  before planning anything related to it.
+EOF
+
+# ---------------------------------------------------------------- task template
+put .agents/tasks/_template.md <<'EOF'
+# T-XXX: <short title>
+Status: todo
+Owner: codex
+
+## Goal
+<one or two sentences>
+
+## Files you may edit
+- <path or folder>
+
+## Context (link files, do not paste)
+- <path>
+
+## Done when (checks to run)
+- <command, e.g. npm test>
+
+## Notes / questions
+
+## Changes by human
+
+## Result (worker fills, max 5 lines)
+EOF
+
+# ---------------------------------------------------------------- scripts
+put scripts/start-agents.sh <<'EOF'
+#!/usr/bin/env bash
+# Dựng phiên tmux: window "lead" (claude) + mỗi worker một window, mỗi worker một git worktree.
+# Dùng:  scripts/start-agents.sh            (chỉ codex)
+#        WORKERS="codex gemini" scripts/start-agents.sh
+set -euo pipefail
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+NAME="$(basename "$ROOT")"
+SESSION="${SESSION:-agents}"
+WORKERS="${WORKERS:-codex}"
+
+if tmux has-session -t "$SESSION" 2>/dev/null; then
+  echo "Phiên đã tồn tại. Vào bằng: tmux attach -t $SESSION"; exit 0
+fi
+cd "$ROOT"
+git rev-parse HEAD >/dev/null 2>&1 || { echo "Repo chưa có commit nào. Hãy commit trước."; exit 1; }
+
+tmux new-session -d -s "$SESSION" -n lead -c "$ROOT" "claude; exec bash"
+for w in $WORKERS; do
+  WT="$ROOT/../$NAME-$w"
+  if [ ! -d "$WT" ]; then
+    git worktree add "$WT" -b "agent/$w" 2>/dev/null || git worktree add "$WT" "agent/$w"
+  fi
+  ln -sfn "$ROOT/.agents" "$WT/.agents"   # dùng chung thư mục task với lead
+  tmux new-window -t "$SESSION" -n "$w" -c "$WT" "$w; exec bash"
+done
+tmux select-window -t "$SESSION:lead"
+echo "Xong. Vào bằng: tmux attach -t $SESSION   (Ctrl-b n/p: đổi window, Ctrl-b d: thoát ra)"
+EOF
+
+put scripts/assign.sh <<'EOF'
+#!/usr/bin/env bash
+# Lead gọi: scripts/assign.sh T-001 codex
+set -euo pipefail
+ID="${1:?task id}"; W="${2:?worker (codex|gemini)}"; SESSION="${SESSION:-agents}"
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+F="$ROOT/.agents/tasks/$ID.md"
+[ -f "$F" ] || { echo "Không có $F"; exit 1; }
+sed -i "s/^Owner:.*/Owner: $W/; s/^Status:.*/Status: in-progress/" "$F"
+MSG="Do task $ID: read .agents/tasks/$ID.md and AGENTS.md, follow the task protocol exactly. Be terse."
+tmux send-keys -t "$SESSION:$W" -l "$MSG"
+sleep 0.4
+tmux send-keys -t "$SESSION:$W" Enter
+echo "Đã giao $ID cho $W"
+EOF
+
+put scripts/notify.sh <<'EOF'
+#!/usr/bin/env bash
+# Worker gọi khi xong/bị chặn: scripts/notify.sh T-001
+set -euo pipefail
+ID="${1:?task id}"; SESSION="${SESSION:-agents}"
+tmux send-keys -t "$SESSION:lead" -l "Worker updated $ID. Read only its Status and Result in .agents/tasks/$ID.md, then report to me in 3 lines max."
+sleep 0.4
+tmux send-keys -t "$SESSION:lead" Enter
+EOF
+
+chmod +x scripts/*.sh
+
+cat <<'EOF'
+
+Hoàn tất. Bước tiếp theo:
+  1. Mở AGENTS.md, điền phần "Project conventions".
+  2. git add AGENTS.md CLAUDE.md scripts .gitignore && git commit -m "agent scaffolding"
+     (bắt buộc commit trước, vì worktree của worker lấy file từ commit)
+  3. scripts/start-agents.sh      rồi      tmux attach -t agents
+EOF
