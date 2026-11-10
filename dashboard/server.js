@@ -251,12 +251,26 @@ on('GET', /^\/api\/projects$/, async (req, res) => {
   send(res, 200, { projects: list });
 });
 
+// git commit với danh tính dự phòng nếu máy chưa cấu hình user.name/user.email
+async function gitCommit(root, msg, files) {
+  const id = await run('git', ['-C', root, 'config', 'user.email']);
+  const extra = id.out.trim() ? [] : ['-c', 'user.name=Agent-Squad', '-c', 'user.email=agent-squad@localhost'];
+  return run('git', ['-C', root, ...extra, 'commit', '-m', msg, ...(files ? ['--', ...files] : [])]);
+}
+
 on('POST', /^\/api\/projects$/, async (req, res) => {
   const b = await readBody(req);
   const dir = normPath(b.path);
   if (!fs.existsSync(dir) || !fs.statSync(dir).isDirectory()) return send(res, 400, { error: `Không có thư mục ${dir}` });
-  const top = await run('git', ['-C', dir, 'rev-parse', '--show-toplevel']);
-  if (!top.ok) return send(res, 400, { error: `${dir} chưa phải repo git. Chạy "git init" trong thư mục đó trước (hoặc git clone repo về).` });
+  let top = await run('git', ['-C', dir, 'rev-parse', '--show-toplevel']);
+  let created = false;
+  if (!top.ok) {
+    if (!b.init) return send(res, 400, { code: 'not_repo', error: `${dir} chưa phải repo git.` });
+    const i = await run('git', ['-C', dir, 'init']);
+    if (!i.ok) return send(res, 500, { error: i.err.trim() });
+    created = true;
+    top = await run('git', ['-C', dir, 'rev-parse', '--show-toplevel']);
+  }
   const root = top.out.trim();
   const list = loadProjects();
   let p = list.find((x) => x.path === root);
@@ -273,7 +287,59 @@ on('POST', /^\/api\/projects$/, async (req, res) => {
     const r = await run('bash', [path.join(SCRIPTS, 'setup-agents.sh')], { cwd: root });
     setup = (r.out + r.err).trim();
   }
-  send(res, 200, { project: p, setup, ...(await scaffoldState(root)) });
+  let commit = null;
+  if (created) {
+    // repo mới tạo: commit toàn bộ (theo .gitignore) để worker thấy được file của project
+    await run('git', ['-C', root, 'add', '-A']);
+    const c = await gitCommit(root, 'Initial commit (Agent-Squad)');
+    commit = { ok: c.ok, out: (c.out + c.err).trim() };
+  }
+  send(res, 200, { project: p, created, setup, commit, ...(await scaffoldState(root)) });
+});
+
+on('POST', /^\/api\/projects\/prune$/, (req, res) => {
+  const list = loadProjects();
+  const keep = list.filter((x) => x.path === DEFAULT_ROOT || fs.existsSync(x.path));
+  saveProjects(keep);
+  send(res, 200, { removed: list.length - keep.length });
+});
+
+// --- duyệt thư mục (cho hộp chọn project)
+const fsRoots = () => {
+  const roots = [{ label: 'Home (WSL)', path: os.homedir() }];
+  try { for (const d of fs.readdirSync('/mnt')) if (/^[a-z]$/.test(d)) roots.push({ label: `${d.toUpperCase()}:`, path: `/mnt/${d}` }); } catch { /* không phải WSL */ }
+  return roots;
+};
+on('GET', /^\/api\/fs$/, (req, res, _m, url) => {
+  const dir = normPath(url.searchParams.get('dir') || os.homedir());
+  let entries = [];
+  try {
+    entries = fs.readdirSync(dir, { withFileTypes: true })
+      .filter((e) => { try { return (e.isDirectory() || (e.isSymbolicLink() && fs.statSync(path.join(dir, e.name)).isDirectory())) && !e.name.startsWith('.') && !e.name.startsWith('$'); } catch { return false; } })
+      .map((e) => ({ name: e.name, repo: fs.existsSync(path.join(dir, e.name, '.git')) }))
+      .sort((x, y) => x.name.localeCompare(y.name));
+  } catch (e) { return send(res, 400, { error: `Không mở được ${dir}: ${e.code || e.message}` }); }
+  send(res, 200, { dir, parent: path.dirname(dir) === dir ? null : path.dirname(dir), repo: fs.existsSync(path.join(dir, '.git')), entries: entries.slice(0, 500), roots: fsRoots() });
+});
+on('POST', /^\/api\/fs\/mkdir$/, async (req, res) => {
+  const b = await readBody(req);
+  const name = String(b.name || '').trim();
+  if (!name || /[\\/]|^\.\.?$/.test(name)) return send(res, 400, { error: 'Tên thư mục không hợp lệ' });
+  const dir = path.join(normPath(b.dir), name);
+  try { fs.mkdirSync(dir); } catch (e) { return send(res, 400, { error: e.code === 'EEXIST' ? 'Thư mục đã có' : e.message }); }
+  send(res, 200, { dir });
+});
+// Hộp thoại chọn thư mục của Windows (chỉ chạy được trong WSL có powershell.exe)
+on('POST', /^\/api\/fs\/pick$/, async (req, res) => {
+  const ps = "Add-Type -AssemblyName System.Windows.Forms; $o=New-Object System.Windows.Forms.Form -Property @{TopMost=$true}; " +
+    "$f=New-Object System.Windows.Forms.FolderBrowserDialog; $f.Description='Chon thu muc project cho Agent-Squad'; $f.ShowNewFolderButton=$true; " +
+    "if($f.ShowDialog($o) -eq 'OK'){[Console]::Out.Write($f.SelectedPath)}";
+  const r = await run('powershell.exe', ['-NoProfile', '-STA', '-Command', ps], { timeout: 10 * 60000 });
+  if (!r.ok) return send(res, 501, { error: 'Không mở được hộp thoại Windows (chỉ dùng được khi chạy trong WSL). Hãy dùng nút "Duyệt".' });
+  const win = r.out.trim();
+  if (!win) return send(res, 200, { path: null });
+  const u = await run('wslpath', ['-u', win]);
+  send(res, 200, { path: u.ok ? u.out.trim() : normPath(win), windowsPath: win });
 });
 
 on('DELETE', /^\/api\/projects$/, (req, res, _m, url) => {
@@ -291,7 +357,7 @@ on('POST', /^\/api\/projects\/commit$/, async (req, res, _m, url) => {
   const files = ['AGENTS.md', 'CLAUDE.md', 'scripts', '.gitignore'].filter((f) => fs.existsSync(path.join(ctx.root, f)));
   const a = await run('git', ['-C', ctx.root, 'add', '--', ...files]);
   if (!a.ok) return send(res, 500, { error: a.err.trim() });
-  const c = await run('git', ['-C', ctx.root, 'commit', '-m', 'Add agent scaffolding (Agent-Squad)', '--', ...files]);
+  const c = await gitCommit(ctx.root, 'Add agent scaffolding (Agent-Squad)', files);
   send(res, c.ok ? 200 : 500, { ok: c.ok, out: (c.out + c.err).trim() });
 });
 
