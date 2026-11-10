@@ -72,6 +72,11 @@ put CLAUDE.md <<'EOF'
 - Give each task a disjoint set of files; never assign overlapping files to two workers.
 - If the human says they changed something directly with a worker, re-read that task file
   before planning anything related to it.
+- The human may be non-technical and uses a web dashboard. Reply in the human's language, in plain
+  words, short. Never ask them to type commands: do it yourself (or have a worker do it).
+- "Merge"/"gộp" finished work: in your own directory, `git merge --no-edit agent/<worker>` for each
+  done task's owner, run the project's checks, then report. On conflicts: stop and explain simply.
+- "Push": `git push` the current branch (set upstream if needed). Report the result in one line.
 EOF
 
 # ---------------------------------------------------------------- task template
@@ -186,7 +191,8 @@ F="$ROOT/.agents/tasks/$ID.md"
 [ -f "$F" ] || { echo "Không có $F"; exit 1; }
 tmux list-windows -t "$SESSION" -F '#W' 2>/dev/null | grep -qx -- "$W" || { echo "Không có window $W trong phiên $SESSION"; exit 1; }
 sed -i "s/^Owner:.*/Owner: $W/; s/^Status:.*/Status: in-progress/" "$F"
-MSG="Do task $ID: read .agents/tasks/$ID.md and AGENTS.md, follow the task protocol exactly. Be terse."
+BASE="$(git -C "$ROOT" branch --show-current 2>/dev/null || true)"
+MSG="Do task $ID: ${BASE:+first run 'git merge --no-edit $BASE' to get the latest code (on conflicts set Status: blocked and explain), then }read .agents/tasks/$ID.md and AGENTS.md, follow the task protocol exactly. Be terse."
 tmux send-keys -t "$SESSION:$W" -l "$MSG"
 sleep 0.4
 tmux send-keys -t "$SESSION:$W" Enter

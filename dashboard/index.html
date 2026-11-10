@@ -77,6 +77,25 @@ details summary{cursor:pointer;color:var(--muted);font-size:12px}
 .pjrow{display:flex;gap:8px;align-items:center;border:1px solid var(--line);border-radius:6px;padding:6px 8px}
 .pjrow .pth{flex:1;min-width:0;font-size:12px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 code{font:12px ui-monospace,Consolas,monospace}
+.dlg-b,.box,.fsbox,#pjList,#cfgWorkers{grid-template-columns:minmax(0,1fr)}
+.fsbox{border:1px solid var(--line);border-radius:8px;padding:8px;display:grid;gap:6px;background:var(--bg)}
+.fsdir{font-size:12px;color:var(--muted);word-break:break-all}
+.fslist{max-height:240px;overflow:auto;display:grid;gap:2px;border:1px solid var(--line);border-radius:6px;padding:4px;background:var(--panel)}
+.fslist button{text-align:left;border:0;padding:4px 8px;border-radius:4px;background:none;display:flex;gap:6px}
+.fslist button:hover{background:var(--bg)}
+.tag{font-size:11px;border:1px solid var(--done);color:var(--done);border-radius:99px;padding:0 6px;margin-left:auto}
+.termwrap{position:relative;flex:1;display:flex;min-height:200px}
+.termwrap .term{flex:1}
+.starthint{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;background:var(--term);color:var(--term-text);text-align:center;padding:16px}
+.starthint button{font-size:16px;padding:10px 22px}
+.quick{display:flex;gap:6px;flex-wrap:wrap;align-items:center;padding:8px;border-top:1px solid var(--line);background:color-mix(in srgb,var(--accent) 10%,var(--panel))}
+.quick b{font-size:13px}
+.quick button{font-size:13px}
+.suggest{display:flex;gap:6px;flex-wrap:wrap;padding:8px 8px 0}
+.suggest button{font-size:12px;border-radius:99px;padding:3px 10px;color:var(--muted)}
+.suggest button:hover{color:var(--text)}
+details.adv summary{padding:4px 10px 8px;font-size:12px;color:var(--muted);cursor:pointer}
+.pill.busy .dot{background:var(--prog)}.pill.wait .dot{background:var(--blocked)}
 </style>
 </head>
 <body>
@@ -90,6 +109,7 @@ code{font:12px ui-monospace,Consolas,monospace}
   <button id="btnCfg">Chọn agent &amp; model</button>
   <button id="btnStart" class="primary">Start agents</button>
   <button id="btnStop" class="danger">Stop</button>
+  <button id="btnUpdate" class="small" title="Tải bản Agent-Squad mới nhất và khởi động lại dashboard">⟳ Cập nhật</button>
 </header>
 <div id="banner" class="banner" hidden></div>
 
@@ -100,15 +120,24 @@ code{font:12px ui-monospace,Consolas,monospace}
   </section>
 
   <section>
-    <h2><span class="tabs" id="tabs"></span><span class="spacer"></span><label class="hint"><input type="checkbox" id="follow" checked> tự cuộn</label></h2>
-    <pre class="term" id="term">Chưa có phiên tmux. Bấm "Start agents".</pre>
+    <h2><span class="tabs" id="tabs"></span><span class="spacer"></span><span id="agentStatus" class="pill"></span></h2>
+    <div class="termwrap">
+      <pre class="term" id="term"></pre>
+      <div id="startHint" class="starthint" hidden><p>Các agent của project này chưa chạy.</p><button id="btnStart2" class="primary">▶ Start agents</button><p class="hint">Muốn đổi agent hoặc model thì bấm "Chọn agent &amp; model" trước.</p></div>
+    </div>
+    <div class="quick" id="quick" hidden></div>
+    <div class="suggest" id="suggest"></div>
     <div class="sendbar">
       <button id="btnAttach" title="Đính kèm file (hoặc kéo thả / dán ảnh vào ô nhắn)">📎</button>
-      <textarea id="msg" placeholder="Nhắn cho window đang chọn. Enter để gửi, Shift+Enter xuống dòng. Kéo thả hoặc dán ảnh/file vào đây."></textarea>
+      <textarea id="msg" placeholder="Nhắn cho agent… (Enter để gửi, Shift+Enter xuống dòng, kéo thả hoặc dán ảnh/file vào đây)"></textarea>
       <button id="btnSend" class="primary">Gửi</button>
     </div>
     <div class="chips" id="chips"></div>
-    <div class="keys" id="keys"></div>
+    <details class="adv"><summary>Nâng cao</summary>
+      <div class="keys" id="keys"></div>
+      <div class="row" style="padding:0 8px 8px"><label class="hint"><input type="checkbox" id="follow" checked> tự cuộn xuống cuối</label>
+        <label class="hint"><input type="checkbox" id="showWatch"> hiện cửa sổ "watch" (nhật ký giao việc)</label></div>
+    </details>
     <input type="file" id="fileInput" multiple hidden>
   </section>
 </main>
@@ -170,13 +199,31 @@ code{font:12px ui-monospace,Consolas,monospace}
 <dialog id="dlgProj">
   <div class="dlg-h"><h3>Project</h3><button id="pjClose" class="small">Đóng</button></div>
   <div class="dlg-b">
-    <div class="box"><h4>Thêm project</h4>
-      <label><span>Thư mục repo git (trong WSL, ví dụ <code>~/my-app</code>, hoặc đường dẫn Windows <code>D:\Web\my-app</code>)</span><input id="pjPath" placeholder="~/my-app"></label>
-      <label>Tên hiển thị (tuỳ chọn)<input id="pjName" placeholder="my-app"></label>
-      <div class="row"><span class="hint">Nếu repo chưa có AGENTS.md / CLAUDE.md, dashboard sẽ tự tạo (không ghi đè file có sẵn).</span><span class="spacer"></span><button id="pjAdd" class="primary">Thêm</button></div>
+    <div class="box"><h4>✨ Tạo project mới</h4>
+      <div class="row"><label style="flex:1;min-width:180px">Tên project<input id="pnName" placeholder="Ví dụ: Web bán hàng"></label></div>
+      <label>Mô tả ngắn (tuỳ chọn, ghi vào README.md để agent hiểu project)<textarea id="pnDesc" style="min-height:50px" placeholder="Ví dụ: Trang web bán quần áo, có giỏ hàng và thanh toán."></textarea></label>
+      <div class="row"><span class="hint">Đặt trong:</span><code id="pnParentShow" class="fsdir"></code><button id="pnBrowse" class="small">Đổi chỗ…</button>
+        <span class="spacer"></span><button id="pnCreate" class="primary">Tạo project</button></div>
+      <span class="hint">Dashboard tạo thư mục, repo git và các file khung cho agent. Bạn chỉ cần Start rồi nhắn cho Lead.</span>
     </div>
-    <div class="box"><h4>Danh sách</h4><div id="pjList" style="display:grid;gap:6px"></div></div>
-    <p class="hint" style="margin:0">Mỗi project có phiên agent riêng, chạy song song được. Nên để repo trong WSL (~/...) thay vì ổ D: cho nhanh.</p>
+    <div class="box"><h4>📂 Thêm project có sẵn</h4>
+      <div class="row"><input id="pjPath" placeholder="Chọn thư mục bằng nút bên cạnh, hoặc gõ ~/my-app, D:\Web\my-app" style="flex:1;min-width:220px">
+        <button id="pjBrowse" class="small">📁 Duyệt…</button><button id="pjNative" class="small" title="Mở hộp thoại chọn thư mục của Windows">🪟 Hộp thoại Windows</button></div>
+      <div id="fsBox" class="fsbox" hidden>
+        <div class="row" id="fsRoots"></div>
+        <div class="row"><button id="fsUp" class="small">↑ Lên</button><code id="fsDir" class="fsdir"></code></div>
+        <div id="fsList" class="fslist"></div>
+        <div class="row"><input id="fsNew" placeholder="tên thư mục mới" style="width:180px"><button id="fsMk" class="small">+ Tạo thư mục</button>
+          <span class="spacer"></span><button id="fsPick" class="primary small">Chọn thư mục này</button></div>
+      </div>
+      <label>Tên hiển thị (tuỳ chọn)<input id="pjName" placeholder="mặc định là tên thư mục"></label>
+      <label style="display:flex;gap:6px;align-items:center;color:var(--text)"><input type="checkbox" id="pjInit" checked> Tự tạo repo git nếu thư mục chưa phải repo (git init + commit toàn bộ file hiện có)</label>
+      <div class="row"><span class="hint">Repo chưa có AGENTS.md / CLAUDE.md thì dashboard tự tạo (không ghi đè file có sẵn).</span><span class="spacer"></span><button id="pjAdd" class="primary">Thêm project</button></div>
+    </div>
+    <div class="box"><h4 class="row">Danh sách <span class="spacer"></span><button id="pjPrune" class="small danger" title="Xoá khỏi danh sách các project mà thư mục không còn tồn tại">Xoá project không còn thư mục</button></h4>
+      <div id="pjList" style="display:grid;gap:6px"></div>
+      <span class="hint">"Xoá khỏi danh sách" chỉ bỏ đường dẫn khỏi dashboard, không xoá file nào trên máy.</span></div>
+    <p class="hint" style="margin:0">Mỗi project có phiên agent riêng, chạy song song được. Repo để trong WSL (Home) chạy nhanh hơn ổ C:/D:.</p>
   </div>
 </dialog>
 
@@ -185,7 +232,7 @@ code{font:12px ui-monospace,Consolas,monospace}
 <script>
 const $ = (s) => document.querySelector(s);
 const COLS = [['todo','Todo'],['ready','Chờ giao'],['in-progress','Đang làm'],['blocked','Bị chặn'],['done','Xong']];
-const KEYS = [['Enter','Enter'],['Escape','Esc'],['C-c','Ctrl-C'],['Up','↑'],['Down','↓'],['Tab','Tab'],['y','y'],['n','n']];
+const KEYS = [['Enter','Enter'],['Escape','Esc'],['C-c','Ctrl-C (dừng)'],['Up','↑'],['Down','↓'],['Tab','Tab'],['y','y'],['n','n'],['1','1'],['2','2'],['3','3']];
 const AGENTS = ['claude','codex','gemini'];
 let catalog = {claude:{models:[],efforts:[]},codex:{models:[],efforts:[]},gemini:{models:[],efforts:[]}};
 let projects = [], proj = localGet('proj') || '';
@@ -220,27 +267,68 @@ function switchProject(id){
 }
 $('#projSel').onchange = ()=>switchProject($('#projSel').value);
 function renderProjList(){
-  $('#pjList').innerHTML = projects.map(p=>`<div class="pjrow"><b>${esc(p.name)}</b><span class="pth" title="${esc(p.path)}">${esc(p.path)}${p.exists?'':' (không thấy thư mục)'}</span>
+  $('#pjList').innerHTML = projects.map(p=>`<div class="pjrow"><b>${esc(p.name)}</b><span class="pth" title="${esc(p.path)}">${esc(p.path)}${p.exists?'':' — không còn thư mục'}</span>
     <span class="hint">${p.running?'đang chạy':''}</span>
-    <button class="small" data-open="${esc(p.id)}">Mở</button>${projects[0].id===p.id?'':`<button class="small danger" data-del="${esc(p.id)}" title="Bỏ khỏi danh sách (không xoá file)">Bỏ</button>`}</div>`).join('');
+    ${p.exists?`<button class="small" data-open="${esc(p.id)}">Mở</button>`:''}${projects[0].id===p.id?'':`<button class="small danger" data-del="${esc(p.id)}">Xoá khỏi danh sách</button>`}</div>`).join('');
 }
-$('#btnProj').onclick = async()=>{await loadProjects().catch(()=>{}); $('#dlgProj').showModal(); $('#pjPath').focus()};
+$('#btnProj').onclick = async()=>{await loadProjects().catch(()=>{}); $('#fsBox').hidden=true; $('#pnParentShow').textContent = localGet('newParent') || '~ (thư mục Home trong WSL)'; $('#dlgProj').showModal(); $('#pnName').focus()};
 $('#pjClose').onclick = ()=>$('#dlgProj').close();
 $('#pjList').addEventListener('click',async e=>{
   const o=e.target.closest('[data-open]'), d=e.target.closest('[data-del]');
   if(o){$('#dlgProj').close(); switchProject(o.dataset.open); await loadProjects()}
-  if(d){ if(!confirm('Bỏ project này khỏi danh sách? File trong repo không bị xoá.')) return;
-    try{const r=await fetch('/api/projects?p='+encodeURIComponent(d.dataset.del),{method:'DELETE',headers:{'X-Squad':'1'}}); if(!r.ok) throw new Error((await r.json()).error); if(d.dataset.del===proj) proj=''; await loadProjects(); switchProject(proj)}catch(x){toast(x.message,'err')} }
+  if(d){ const pr=projects.find(x=>x.id===d.dataset.del);
+    if(pr?.running && !confirm('Project này đang chạy agent. Vẫn xoá khỏi danh sách? (agent vẫn chạy cho tới khi bạn Stop)')) return;
+    try{const r=await fetch('/api/projects?p='+encodeURIComponent(d.dataset.del),{method:'DELETE',headers:{'X-Squad':'1'}}); if(!r.ok) throw new Error((await r.json()).error); if(d.dataset.del===proj) proj=''; await loadProjects(); switchProject(proj); toast('Đã xoá khỏi danh sách','ok')}catch(x){toast(x.message,'err')} }
 });
-$('#pjAdd').onclick = async()=>{
-  const path=$('#pjPath').value.trim(); if(!path){toast('Nhập thư mục repo','err'); return}
-  $('#pjAdd').disabled=true;
+$('#pjPrune').onclick = async()=>{try{const r=await api('POST','/api/projects/prune'); await loadProjects(); switchProject(proj); toast(r.removed?`Đã xoá ${r.removed} project không còn thư mục`:'Không có project nào mất thư mục','ok')}catch(e){toast(e.message,'err')}};
+
+// --- chọn thư mục
+let fsDir = '';
+async function fsOpen(dir){
   try{
-    const r = await api('POST','/api/projects',{path,name:$('#pjName').value});
-    $('#pjPath').value=''; $('#pjName').value='';
-    toast(`Đã thêm ${r.project.name}` + (r.setup?'\nĐã tạo AGENTS.md, CLAUDE.md, scripts/':'') + (r.needsCommit?'\nCần commit file khung trước khi Start (nút ở thanh cảnh báo).':''),'ok');
+    const r = await fetch('/api/fs?dir='+encodeURIComponent(dir||'')); const j = await r.json(); if(!r.ok) throw new Error(j.error);
+    fsDir = j.dir; $('#fsDir').textContent = j.dir + (j.repo?'  (repo git)':''); $('#fsUp').disabled = !j.parent; $('#fsUp').dataset.dir = j.parent||'';
+    $('#fsRoots').innerHTML = j.roots.map(r=>`<button class="small" data-dir="${esc(r.path)}">${esc(r.label)}</button>`).join('');
+    $('#fsList').innerHTML = j.entries.map(e=>`<button data-dir="${esc(j.dir.replace(/\/$/,'')+'/'+e.name)}">📁 ${esc(e.name)}${e.repo?'<span class="tag">git</span>':''}</button>`).join('') || '<span class="hint" style="padding:4px 8px">(không có thư mục con)</span>';
+    localSet('fsDir', j.dir);
+  }catch(e){toast(e.message,'err')}
+}
+$('#pjBrowse').onclick = ()=>{ const box=$('#fsBox'); if(fsTarget!=='path'){fsTarget='path'; $('#pjBrowse').closest('.row').after(box); box.hidden=false} else box.hidden=!box.hidden; if(!box.hidden) fsOpen($('#pjPath').value.trim() || localGet('fsDir') || '') };
+$('#fsBox').addEventListener('click',e=>{const b=e.target.closest('[data-dir]'); if(b && b.dataset.dir) fsOpen(b.dataset.dir)});
+$('#fsUp').onclick = ()=>{ if($('#fsUp').dataset.dir) fsOpen($('#fsUp').dataset.dir) };
+let fsTarget = 'path';
+$('#fsPick').onclick = ()=>{ if(fsTarget==='parent'){ setParent(fsDir) } else { $('#pjPath').value = fsDir } $('#fsBox').hidden = true };
+function setParent(d){ localSet('newParent', d); $('#pnParentShow').textContent = d }
+$('#pnBrowse').onclick = ()=>{ const box=$('#fsBox'); fsTarget='parent'; $('#pnBrowse').closest('.box').append(box); box.hidden=false; fsOpen(localGet('newParent')||'') };
+$('#pnCreate').onclick = async()=>{
+  const name=$('#pnName').value.trim(); if(!name){toast('Nhập tên project','err'); $('#pnName').focus(); return}
+  $('#pnCreate').disabled=true;
+  try{
+    const r = await api('POST','/api/projects/new',{name, description:$('#pnDesc').value, parent: localGet('newParent')||'~'});
+    $('#pnName').value=''; $('#pnDesc').value='';
+    toast(`Đã tạo project ${r.project.name}\n${r.project.path}` + (r.commit&&!r.commit.ok?'\nChưa commit được: '+r.commit.out:'\nBấm Start agents rồi nhắn cho Lead để bắt đầu.'), r.commit&&!r.commit.ok?'err':'ok');
     $('#dlgProj').close(); proj=r.project.id; await loadProjects(); switchProject(proj);
   }catch(e){toast(e.message,'err')}
+  $('#pnCreate').disabled=false;
+};
+$('#fsMk').onclick = async()=>{ const name=$('#fsNew').value.trim(); if(!name) return; try{const r=await api('POST','/api/fs/mkdir',{dir:fsDir,name}); $('#fsNew').value=''; fsOpen(r.dir)}catch(e){toast(e.message,'err')} };
+$('#pjNative').onclick = async()=>{
+  $('#pjNative').disabled=true; toast('Đang mở hộp thoại chọn thư mục của Windows (có thể nằm sau cửa sổ này)…');
+  try{const r=await api('POST','/api/fs/pick'); if(r.path) $('#pjPath').value=r.path}catch(e){toast(e.message,'err')}
+  $('#pjNative').disabled=false;
+};
+
+$('#pjAdd').onclick = async()=>{
+  const path=$('#pjPath').value.trim(); if(!path){toast('Chọn hoặc nhập thư mục project','err'); return}
+  $('#pjAdd').disabled=true;
+  try{
+    const r = await api('POST','/api/projects',{path,name:$('#pjName').value,init:$('#pjInit').checked});
+    $('#pjPath').value=''; $('#pjName').value='';
+    toast(`Đã thêm ${r.project.name}` + (r.created?'\nĐã tạo repo git mới':'') + (r.setup?'\nĐã tạo AGENTS.md, CLAUDE.md, scripts/':'') + (r.commit&&!r.commit.ok?'\nChưa commit được: '+r.commit.out:'') + (r.needsCommit?'\nCần commit file khung trước khi Start (nút ở thanh cảnh báo).':''), r.commit&&!r.commit.ok?'err':'ok');
+    $('#dlgProj').close(); proj=r.project.id; await loadProjects(); switchProject(proj);
+  }catch(e){
+    if(/chưa phải repo git/.test(e.message)) toast(e.message+'\nTích ô "Tự tạo repo git" rồi bấm Thêm lại.','err'); else toast(e.message,'err');
+  }
   $('#pjAdd').disabled=false;
 };
 function renderBanner(){
@@ -323,11 +411,47 @@ function renderBoard(){
   }</div>`).join('');
 }
 
-function renderTabs(){
-  const wins = state.running ? state.windows : [];
-  if(wins.length && !wins.some(w=>w.name===win)) win = wins[0].name;
-  $('#tabs').innerHTML = wins.map(w=>`<button class="tab small${w.name===win?' sel':''}" data-win="${esc(w.name)}">${esc(w.name)}</button>`).join('') || '<span class="hint">Agents</span>';
+function winLabel(name){
+  if(name==='lead') return '👑 Lead';
+  if(name==='watch') return '📜 watch';
+  return '🛠 '+name;
 }
+function workerInfo(name){
+  const line=(state?.workersTxt||'').split('\n').find(l=>l.split(/\s+/)[0]===name); return line?line.trim():'';
+}
+function renderTabs(){
+  const all = state.running ? state.windows : [];
+  const wins = all.filter(w=>w.name!=='watch' || $('#showWatch').checked || win==='watch');
+  if(wins.length && !wins.some(w=>w.name===win)) win = wins[0].name;
+  $('#tabs').innerHTML = wins.map(w=>`<button class="tab small${w.name===win?' sel':''}" data-win="${esc(w.name)}" title="${esc(w.name==='lead'?'Lead: chia việc và nói chuyện với bạn':workerInfo(w.name)||w.name)}">${esc(winLabel(w.name))}</button>`).join('') || '<span class="hint">Agents</span>';
+  renderSuggest();
+}
+$('#showWatch').onchange = ()=>{ if(state) renderTabs() };
+
+const SUGGEST = {
+  lead: [
+    ['🗂 Giao việc mới', 'Hãy lên kế hoạch, chia thành task nhỏ và giao cho worker: ', true],
+    ['📋 Tiến độ', 'Báo cáo ngắn gọn tiến độ các task hiện tại.'],
+    ['🔀 Gộp code', 'Gộp (merge) code của các task đã xong vào nhánh chính, chạy kiểm tra rồi báo kết quả.'],
+    ['⬆️ Push GitHub', 'Đẩy (push) nhánh chính lên GitHub và báo kết quả.'],
+    ['❓ Giải thích', 'Giải thích ngắn gọn, dễ hiểu bạn vừa làm gì và bước tiếp theo là gì.'],
+  ],
+  worker: [
+    ['🔎 Đang làm gì?', 'Bạn đang làm gì? Trả lời ngắn gọn.'],
+    ['▶ Làm tiếp', 'Tiếp tục task hiện tại.'],
+    ['⏸ Dừng lại', 'Dừng lại, ghi lý do vào phần Notes của task và đặt Status: blocked.'],
+  ],
+};
+function renderSuggest(){
+  const list = win==='watch' ? [] : SUGGEST[win==='lead'?'lead':'worker'];
+  $('#suggest').innerHTML = list.map(([l,t,open],i)=>`<button data-s="${i}" title="${esc(t)}">${esc(l)}</button>`).join('');
+  $('#msg').placeholder = win==='watch' ? 'Cửa sổ nhật ký, không cần nhắn.' : `Nhắn cho ${win==='lead'?'Lead':win}… (Enter để gửi, Shift+Enter xuống dòng, kéo thả hoặc dán ảnh/file vào đây)`;
+}
+$('#suggest').addEventListener('click',e=>{
+  const b=e.target.closest('[data-s]'); if(!b) return;
+  const [,text,open] = SUGGEST[win==='lead'?'lead':'worker'][+b.dataset.s];
+  const m=$('#msg'); m.value = open ? text + m.value : text; m.focus(); m.setSelectionRange(m.value.length, m.value.length);
+});
 
 function notifyChanges(){
   const now = Object.fromEntries(state.tasks.map(t=>[t.id,t.status]));
@@ -352,14 +476,64 @@ async function refreshState(){
   }catch(e){$('#stext').textContent='mất kết nối tới server'; $('#sdot').classList.remove('on')}
 }
 
+let paneText = '', paneWin = '', paneChanged = 0;
+function detectPrompts(text){
+  const lines = text.split('\n').slice(-25);
+  const tail = lines.join('\n');
+  const out = [];
+  const opts = [];
+  for(const l of lines.slice(-15)){
+    const m = l.match(/^\s*(?:[❯›>▶●]\s*)?([1-5])[.)]\s+(.{1,70}?)\s*$/);
+    if(m && !opts.some(o=>o.k===m[1])) opts.push({k:m[1], label:m[1]+'. '+m[2].replace(/\s{2,}.*/,'')});
+  }
+  if(opts.length>=2) out.push(...opts.map(o=>({key:o.k,label:o.label})));
+  if(/\((?:y\/n|Y\/n|y\/N)\)|\[(?:y\/n|Y\/n|y\/N)\]/.test(tail)) out.push({key:'y',label:'Có (y)'},{key:'n',label:'Không (n)'});
+  if(/press enter|enter to (?:continue|confirm|select)|nhấn enter/i.test(tail)) out.push({key:'Enter',label:'Tiếp tục (Enter)'});
+  return out;
+}
+function renderStatus(prompts){
+  const st=$('#agentStatus'); st.className='pill';
+  st.hidden = !state?.running;
+  if(!state?.running){st.innerHTML='';return}
+  const busy = Date.now()-paneChanged < 4000;
+  if(prompts.length){st.classList.add('wait'); st.innerHTML='<span class="dot"></span>Đang chờ bạn chọn'}
+  else if(busy){st.classList.add('busy'); st.innerHTML='<span class="dot"></span>Đang làm việc…'}
+  else st.innerHTML='<span class="dot on"></span>Sẵn sàng';
+  const q=$('#quick');
+  q.hidden = !prompts.length;
+  q.innerHTML = prompts.length ? '<b>Agent đang hỏi:</b>' + prompts.map(p=>`<button data-key="${esc(p.key)}" class="${p.key==='1'||p.key==='y'||p.key==='Enter'?'primary':''}">${esc(p.label)}</button>`).join('') + '<button data-key="Escape" title="Huỷ / thoát câu hỏi">Huỷ (Esc)</button>' : '';
+}
+$('#quick').addEventListener('click',async e=>{const b=e.target.closest('[data-key]'); if(!b) return; try{await api('POST','/api/send',{win,key:b.dataset.key}); setTimeout(refreshPane,400)}catch(x){toast(x.message,'err')}});
+
 async function refreshPane(){
-  if(!state || !state.running){$('#term').textContent='Chưa có phiên agent cho project này. Bấm "Start agents".';return}
+  const running = !!state?.running;
+  $('#startHint').hidden = running || !state;
+  if(!running){$('#term').textContent=''; $('#quick').hidden=true; renderStatus([]); return}
   try{
     const {text} = await api('GET','/api/pane/'+encodeURIComponent(win));
     const t=$('#term'); const atBottom = t.scrollTop + t.clientHeight >= t.scrollHeight - 30;
+    if(paneWin!==win){paneWin=win; paneText=text; paneChanged=0}
+    else if(text!==paneText){paneText=text; paneChanged=Date.now()}
     if(t.textContent!==text){t.textContent=text; if($('#follow').checked && (atBottom || !t.dataset.seen)) t.scrollTop=t.scrollHeight; t.dataset.seen=1}
+    renderStatus(win==='watch'?[]:detectPrompts(text));
   }catch(e){$('#term').textContent=e.message}
 }
+$('#btnStart2').onclick = ()=>startAgents();
+
+// ---------------------------------------------------------------- cập nhật
+$('#btnUpdate').onclick = async()=>{
+  if(!confirm('Tải bản Agent-Squad mới nhất? Dashboard sẽ tự khởi động lại; các agent đang chạy không bị ảnh hưởng.')) return;
+  $('#btnUpdate').disabled=true;
+  try{
+    const r = await fetch('/api/update',{method:'POST',headers:{'X-Squad':'1'}}); const j = await r.json();
+    if(!r.ok) throw new Error(j.out||j.error);
+    if(!j.changed){toast('Đã là bản mới nhất.','ok'); $('#btnUpdate').disabled=false; return}
+    toast('Đã cập nhật. Đang khởi động lại…','ok');
+    for(let i=0;i<30;i++){ await new Promise(r=>setTimeout(r,1000)); try{ const x=await fetch('/api/projects'); if(x.ok){ location.reload(); return } }catch{} }
+    toast('Dashboard chưa chạy lại. Mở lại Agent-Squad.bat nhé.','err');
+  }catch(e){toast('Không cập nhật được: '+e.message,'err')}
+  $('#btnUpdate').disabled=false;
+};
 
 // ---------------------------------------------------------------- đính kèm file
 async function uploadFiles(files, list){
