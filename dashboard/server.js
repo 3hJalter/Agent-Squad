@@ -210,8 +210,10 @@ async function sendText(ctx, win, text, enter) {
   return { ok: true };
 }
 
-const specOf = (a) => (a && AGENTS.has(a.agent) && MODEL_RE.test(a.model || '') && EFFORT_RE.test(a.effort || ''))
-  ? a.agent + (a.model ? '@' + a.model : '') + (a.effort ? '#' + a.effort : '') : null;
+const WNAME_RE = /^[A-Za-z0-9_-]{1,30}$/;
+const okName = (n) => !n || (WNAME_RE.test(n) && n !== 'lead' && n !== 'watch');
+const specOf = (a) => (a && AGENTS.has(a.agent) && MODEL_RE.test(a.model || '') && EFFORT_RE.test(a.effort || '') && okName(a.name))
+  ? (a.name ? a.name + '=' : '') + a.agent + (a.model ? '@' + a.model : '') + (a.effort ? '#' + a.effort : '') : null;
 
 // ---------------------------------------------------------------- http
 function send(res, code, body, type = 'application/json; charset=utf-8') {
@@ -418,7 +420,7 @@ on('PUT', /^\/api\/task\/([^/]+)$/, async (req, res, m, url) => {
 });
 
 const chat = require('./chat')({ on, send, readBody, getCtx, loadProjects, withCtx, run });
-const validAgent = (a) => !!specOf(a) && { agent: a.agent, model: a.model || '', effort: a.effort || '' };
+const validAgent = (a) => !!specOf(a) && { name: a.name || '', agent: a.agent, model: a.model || '', effort: a.effort || '' };
 
 const assign = async (ctx, id, w) => {
   if (!chat.isActive(ctx)) return run(path.join(SCRIPTS, 'assign.sh'), [id, w], { env: scriptEnv(ctx) });
@@ -472,7 +474,7 @@ on('POST', /^\/api\/send$/, async (req, res, _m, url) => {
 on('POST', /^\/api\/start$/, async (req, res, _m, url) => {
   const ctx = getCtx(url);
   const b = await readBody(req);
-  const lead = specOf(b.lead) || 'claude';
+  const lead = specOf({ ...b.lead, name: '' }) || 'claude';
   const workers = (Array.isArray(b.workers) ? b.workers : []).map(specOf).filter(Boolean).join(' ') || 'codex';
   chat.stopAll(ctx);
   const r = await run(path.join(SCRIPTS, 'start-agents.sh'), [], { env: scriptEnv(ctx, { LEAD: lead, WORKERS: workers }), timeout: 60000 });
@@ -490,7 +492,7 @@ on('POST', /^\/api\/stop$/, async (req, res, _m, url) => {
 on('POST', /^\/api\/chatmode\/start$/, async (req, res, _m, url) => {
   const ctx = getCtx(url);
   const b = await readBody(req);
-  const lead = validAgent(b.lead) || { agent: 'claude', model: '', effort: '' };
+  const lead = validAgent({ ...b.lead, name: '' }) || { agent: 'claude', model: '', effort: '' };
   const workers = (Array.isArray(b.workers) ? b.workers : []).map(validAgent).filter(Boolean);
   if (!workers.length) workers.push({ agent: 'codex', model: '', effort: '' });
   await tmux('kill-session', '-t', ctx.session); // không chạy song song hai kiểu
