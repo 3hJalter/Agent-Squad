@@ -137,7 +137,9 @@ function listTasks(ctx) {
 }
 
 function nextId(ctx) {
-  const nums = listTasks(ctx).map((t) => Number(t.id.slice(2)));
+  let archived = [];
+  try { archived = fs.readdirSync(path.join(ctx.tasks, 'archive')).map((f) => (f.match(/^T-(\d+)/) || [])[1]).filter(Boolean); } catch { /* chưa có */ }
+  const nums = [...listTasks(ctx).map((t) => Number(t.id.slice(2))), ...archived.map(Number)];
   return 'T-' + String((nums.length ? Math.max(...nums) : 0) + 1).padStart(3, '0');
 }
 
@@ -441,6 +443,32 @@ on('GET', /^\/api\/task\/([^/]+)$/, (req, res, m, url) => {
   try { send(res, 200, { id, text: fs.readFileSync(taskPath(ctx, id), 'utf8') }); } catch { send(res, 404, { error: 'Không có task' }); }
 });
 
+// Xoá task = chuyển vào .agents/tasks/archive/ (lấy lại được bằng cách chuyển file về)
+function archiveTask(ctx, id) {
+  const src = taskPath(ctx, id);
+  if (!fs.existsSync(src)) return false;
+  const dir = path.join(ctx.tasks, 'archive');
+  fs.mkdirSync(dir, { recursive: true });
+  let dst = path.join(dir, id + '.md'), n = 2;
+  while (fs.existsSync(dst)) dst = path.join(dir, `${id}-${n++}.md`);
+  fs.renameSync(src, dst);
+  return true;
+}
+on('DELETE', /^\/api\/task\/([^/]+)$/, (req, res, m, url) => {
+  const [id] = m; const ctx = getCtx(url);
+  if (!ID_RE.test(id)) return send(res, 400, { error: 'ID không hợp lệ' });
+  if (!archiveTask(ctx, id)) return send(res, 404, { error: 'Không có task' });
+  send(res, 200, { ok: true });
+});
+on('POST', /^\/api\/tasks\/cleanup$/, async (req, res, _m, url) => {
+  const ctx = getCtx(url);
+  const b = await readBody(req);
+  const want = new Set(Array.isArray(b.statuses) && b.statuses.length ? b.statuses : ['done']);
+  const ids = listTasks(ctx).filter((t) => want.has(t.status)).map((t) => t.id);
+  for (const id of ids) archiveTask(ctx, id);
+  send(res, 200, { ok: true, archived: ids });
+});
+
 on('PUT', /^\/api\/task\/([^/]+)$/, async (req, res, m, url) => {
   const [id] = m; const ctx = getCtx(url);
   if (!ID_RE.test(id)) return send(res, 400, { error: 'ID không hợp lệ' });
@@ -488,6 +516,13 @@ on('GET', /^\/api\/pane\/([^/]+)$/, async (req, res, m, url) => {
   const r = await tmux('capture-pane', '-p', '-J', '-t', `${ctx.session}:${win}`, '-S', '-300');
   if (!r.ok) return send(res, 404, { error: r.err.trim() || 'Không đọc được window' });
   send(res, 200, { text: r.out.replace(/\s+$/, '') });
+});
+
+on('POST', /^\/api\/pane\/([^/]+)\/clear$/, async (req, res, m, url) => {
+  const [win] = m; const ctx = getCtx(url);
+  if (!WIN_RE.test(win)) return send(res, 400, { error: 'Window không hợp lệ' });
+  const r = await tmux('clear-history', '-t', `${ctx.session}:${win}`);
+  send(res, r.ok ? 200 : 500, { ok: r.ok, out: r.err.trim() });
 });
 
 on('POST', /^\/api\/send$/, async (req, res, _m, url) => {

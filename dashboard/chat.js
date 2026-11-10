@@ -5,7 +5,7 @@
 // - Agent chỉ được sửa file trong thư mục project (hoặc worktree của worker) và .agents/.
 // - Lệnh shell: Claude/Gemini chỉ được chạy danh sách lệnh git/kiểm tra bên dưới;
 //   Codex chạy trong sandbox workspace-write (không mạng).
-// - Khi agent bị chặn, tin nhắn có nút "Cho phép": người dùng bấm thì quyền đó (đúng lệnh/công cụ bị chặn,
+// - Khi agent bị chặn, tin nhắn có nút "Cho phép": người dùng bấm thì quyền đó (loại lệnh bị chặn, ví dụ "npm install", công cụ,
 //   hoặc quyền mạng cho Codex) được lưu cho agent đó và agent làm tiếp. Thu hồi được ở mục Nâng cao.
 // - Không bao giờ tự bật chế độ bỏ qua mọi xác nhận.
 //
@@ -20,13 +20,26 @@ const NAME_RE = /^[A-Za-z0-9_-]{1,40}$/;
 const MAX_TURN_MS = 60 * 60 * 1000;
 const KEEP = 300;
 
-const CLAUDE_TOOLS = ['Read', 'Edit', 'Write', 'MultiEdit', 'Glob', 'Grep', 'LS', 'TodoWrite',
-  ...['git status', 'git diff', 'git log', 'git show', 'git add', 'git commit', 'git merge', 'git branch',
-    'bash -n', 'shellcheck', 'ls', 'rg', 'grep', 'npm test', 'npm run test', 'npm run lint', 'npm run build', 'pytest']
-    .map((c) => `Bash(${c}:*)`)];
-const GEMINI_TOOLS = ['git status', 'git diff', 'git log', 'git show', 'git add', 'git commit', 'git merge', 'git branch',
-  'bash -n', 'shellcheck', 'ls', 'rg', 'grep', 'npm test', 'npm run test', 'npm run lint', 'npm run build', 'pytest']
-  .map((c) => `run_shell_command(${c})`);
+// Lệnh chạy ngay không cần hỏi: xem/tìm file, git cục bộ, lệnh kiểm tra. Lệnh khác cần bạn bấm "Cho phép".
+const SAFE_CMDS = ['cd', 'ls', 'pwd', 'cat', 'head', 'tail', 'wc', 'find', 'grep', 'rg', 'sort', 'diff', 'mkdir',
+  'git status', 'git diff', 'git log', 'git show', 'git add', 'git commit', 'git merge', 'git branch', 'git checkout',
+  'git switch', 'git restore', 'git rev-parse', 'git ls-files',
+  'bash -n', 'shellcheck', 'npm test', 'npm run test', 'npm run lint', 'npm run build', 'pytest'];
+const CLAUDE_TOOLS = ['Read', 'Edit', 'Write', 'MultiEdit', 'Glob', 'Grep', 'LS', 'TodoWrite', ...SAFE_CMDS.map((c) => `Bash(${c}:*)`)];
+const GEMINI_TOOLS = SAFE_CMDS.map((c) => `run_shell_command(${c})`);
+// Khi bạn bấm "Cho phép", quyền được cấp theo loại lệnh ("npm install …") chứ không chỉ đúng một câu lệnh,
+// để lần sau agent chạy lệnh cùng loại không bị chặn lại.
+const TWO_WORD = new Set(['git', 'npm', 'npx', 'yarn', 'pnpm', 'pip', 'pip3', 'cargo', 'go', 'docker', 'gh']);
+function prefixesOf(cmd) {
+  const out = [];
+  for (const part of String(cmd || '').split(/&&|\|\||;|\||\n/)) {
+    const w = part.trim().split(/\s+/).filter(Boolean);
+    if (!w.length || !/^[A-Za-z0-9._/-]+$/.test(w[0])) continue;
+    const pre = TWO_WORD.has(w[0]) && /^[a-z][a-z0-9-]*$/.test(w[1] || '') ? `${w[0]} ${w[1]}` : w[0];
+    if (!SAFE_CMDS.includes(pre) && !SAFE_CMDS.includes(w[0]) && !out.includes(pre)) out.push(pre);
+  }
+  return out;
+}
 
 const LEAD_ROLE = 'You are the LEAD of Agent-Squad, chatting with the human through a web dashboard (chat mode, no tmux). ' +
   'Follow the LEAD rules in CLAUDE.md and the shared rules in AGENTS.md. Workers are listed in .agents/workers.txt. ' +
@@ -155,7 +168,11 @@ module.exports = function setupChat({ on, send, readBody, getCtx, loadProjects, 
             if (s0) Object.assign(s0, { icon: '⛔', error: true, denied: true, detail: toolStep(d.tool_name, d.tool_input).detail });
             else steps.push({ ...toolStep(d.tool_name, d.tool_input), icon: '⛔', error: true, denied: true });
             const cmd = d.tool_input?.command;
-            if (d.tool_name === 'Bash' && cmd) want(`Bash(${String(cmd).replace(/[()\n]/g, ' ').trim().slice(0, 280)})`, `chạy lệnh: ${short(cmd, 200)}`);
+            if (d.tool_name === 'Bash' && cmd) {
+              const pre = prefixesOf(cmd);
+              if (pre.length) for (const x of pre) want(`Bash(${x}:*)`, `chạy các lệnh "${x} …" (lần này: ${short(cmd, 120)})`);
+              else want('Bash(' + String(cmd).replace(/[()\n]/g, ' ').trim().slice(0, 280) + ')', `chạy lệnh: ${short(cmd, 200)}`);
+            }
             else if (d.tool_name) want(d.tool_name, `dùng công cụ ${d.tool_name}` + (d.tool_input?.file_path ? ` (${d.tool_input.file_path})` : d.tool_input?.url ? ` (${d.tool_input.url})` : ''));
           }
         }
@@ -197,7 +214,8 @@ module.exports = function setupChat({ on, send, readBody, getCtx, loadProjects, 
             s.error = true; s.detail = short([s.detail, err].filter(Boolean).join('\n'));
             if (/not allowed|permission|approv|denied|disallow|confirm/i.test(err)) {
               s.denied = true; s.icon = '⛔';
-              if (s.cmd) want(`run_shell_command(${firstWord(s.cmd)})`, `chạy lệnh bắt đầu bằng "${firstWord(s.cmd)}"`);
+              const pre = s.cmd ? (prefixesOf(s.cmd).length ? prefixesOf(s.cmd) : [firstWord(s.cmd)]) : [];
+              if (pre.length) for (const x of pre) want(`run_shell_command(${x})`, `chạy các lệnh "${x} …"`);
               else if (s.tool) want(s.tool, `dùng công cụ ${s.tool}`);
             }
           }
@@ -205,6 +223,16 @@ module.exports = function setupChat({ on, send, readBody, getCtx, loadProjects, 
         if (ev.type === 'error') msg.error = short(ev.message || JSON.stringify(ev), 600);
       }
     };
+  }
+
+  // Dừng ngay: SIGTERM cả nhóm tiến trình, sau 2 giây còn sống thì SIGKILL
+  function kill(L) {
+    const c = L.child;
+    if (!c || c.exitCode !== null) return;
+    L.stopped = true;
+    const sig = (s) => { try { process.kill(-c.pid, s); } catch { try { c.kill(s); } catch { /* đã thoát */ } } };
+    sig('SIGTERM');
+    setTimeout(() => { if (c.exitCode === null && c.signalCode === null) sig('SIGKILL'); }, 2000);
   }
 
   // ------------------------------------------------------------ chạy một lượt
@@ -229,7 +257,8 @@ module.exports = function setupChat({ on, send, readBody, getCtx, loadProjects, 
     const parse = makeParser(a.agent, msg, (sid) => { const s2 = loadState(ctx); s2.sessions[name] = sid; saveState(ctx, s2); });
     let child;
     try {
-      child = spawn(cmd, args, { cwd: a.cwd, env: process.env, stdio: [stdin ? 'pipe' : 'ignore', 'pipe', 'pipe'] });
+      // detached: agent và mọi lệnh con của nó cùng một nhóm tiến trình, để nút Dừng tắt được hết
+      child = spawn(cmd, args, { cwd: a.cwd, env: process.env, detached: true, stdio: [stdin ? 'pipe' : 'ignore', 'pipe', 'pipe'] });
     } catch (e) { msg.error = e.message; return finish(); }
     L.child = child;
     if (stdin) { child.stdin.on('error', () => {}); child.stdin.end(stdin); }
@@ -244,7 +273,7 @@ module.exports = function setupChat({ on, send, readBody, getCtx, loadProjects, 
       }
     });
     child.stderr.on('data', (d) => { errTail = (errTail + d).slice(-2000); });
-    const timer = setTimeout(() => child.kill('SIGTERM'), MAX_TURN_MS);
+    const timer = setTimeout(() => kill(L), MAX_TURN_MS);
     child.on('error', (e) => { msg.error = e.code === 'ENOENT' ? `Không tìm thấy lệnh "${cmd}". Agent này đã được cài trong WSL chưa?` : e.message; });
     child.on('close', (code, signal) => {
       clearTimeout(timer);
@@ -310,7 +339,7 @@ module.exports = function setupChat({ on, send, readBody, getCtx, loadProjects, 
     const st = loadState(ctx);
     for (const n of Object.keys(st.agents || {})) {
       const L = live.get(key(ctx, n));
-      if (L) { L.queue = []; if (L.child) { L.stopped = true; L.child.kill('SIGTERM'); } }
+      if (L) { L.queue = []; if (L.child) { L.stopped = true; kill(L); } }
     }
     if (st.active) { st.active = false; saveState(ctx, st); }
   }
@@ -385,7 +414,7 @@ module.exports = function setupChat({ on, send, readBody, getCtx, loadProjects, 
   on('POST', /^\/api\/chat\/([^/]+)\/stop$/, (req, res, m, url) => {
     const [name] = m; const ctx = getCtx(url);
     const L = live.get(key(ctx, name));
-    if (L) { L.queue = []; if (L.child) { L.stopped = true; L.child.kill('SIGTERM'); } }
+    if (L) { L.queue = []; if (L.child) { L.stopped = true; kill(L); } }
     send(res, 200, { ok: true });
   });
   on('POST', /^\/api\/chat\/([^/]+)\/reset$/, (req, res, m, url) => {
@@ -431,7 +460,7 @@ module.exports = function setupChat({ on, send, readBody, getCtx, loadProjects, 
   // trước khi dashboard khởi động lại: dừng các lượt đang chạy (lịch sử và trạng thái chat giữ nguyên)
   function killAll() {
     let n = 0;
-    for (const L of live.values()) { L.queue = []; if (L.child) { L.stopped = true; L.child.kill('SIGTERM'); n++; } }
+    for (const L of live.values()) { L.queue = []; if (L.child) { L.stopped = true; kill(L); n++; } }
     return n;
   }
   const busyCount = () => [...live.values()].filter((L) => L.child).length;
