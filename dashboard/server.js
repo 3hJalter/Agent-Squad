@@ -26,7 +26,7 @@ const WIN_RE = /^[A-Za-z0-9_-]{1,40}$/;
 const MODEL_RE = /^[A-Za-z0-9._:/-]{0,64}$/;
 const EFFORT_RE = /^[a-z]{0,12}$/;
 const AGENTS = new Set(['claude', 'codex', 'gemini']);
-const KEYS = new Set(['Enter', 'Escape', 'C-c', 'Up', 'Down', 'Tab', 'BTab', 'y', 'n']);
+const KEYS = new Set(['Enter', 'Escape', 'C-c', 'Up', 'Down', 'Tab', 'BTab', 'y', 'n', '1', '2', '3', '4', '5']);
 
 const FALLBACK_TEMPLATE = `# T-XXX: <short title>
 Status: todo
@@ -258,16 +258,14 @@ async function gitCommit(root, msg, files) {
   return run('git', ['-C', root, ...extra, 'commit', '-m', msg, ...(files ? ['--', ...files] : [])]);
 }
 
-on('POST', /^\/api\/projects$/, async (req, res) => {
-  const b = await readBody(req);
-  const dir = normPath(b.path);
-  if (!fs.existsSync(dir) || !fs.statSync(dir).isDirectory()) return send(res, 400, { error: `Không có thư mục ${dir}` });
+async function addProject(dir, name, init) {
+  if (!fs.existsSync(dir) || !fs.statSync(dir).isDirectory()) return { code: 400, body: { error: `Không có thư mục ${dir}` } };
   let top = await run('git', ['-C', dir, 'rev-parse', '--show-toplevel']);
   let created = false;
   if (!top.ok) {
-    if (!b.init) return send(res, 400, { code: 'not_repo', error: `${dir} chưa phải repo git.` });
+    if (!init) return { code: 400, body: { code: 'not_repo', error: `${dir} chưa phải repo git.` } };
     const i = await run('git', ['-C', dir, 'init']);
-    if (!i.ok) return send(res, 500, { error: i.err.trim() });
+    if (!i.ok) return { code: 500, body: { error: i.err.trim() } };
     created = true;
     top = await run('git', ['-C', dir, 'rev-parse', '--show-toplevel']);
   }
@@ -275,10 +273,10 @@ on('POST', /^\/api\/projects$/, async (req, res) => {
   const list = loadProjects();
   let p = list.find((x) => x.path === root);
   if (!p) {
-    const name = String(b.name || '').trim() || path.basename(root);
-    let id = slug(name), n = 2;
-    while (list.some((x) => x.id === id)) id = `${slug(name)}-${n++}`;
-    p = { id, name, path: root };
+    const nm = String(name || '').trim() || path.basename(root);
+    let id = slug(nm), n = 2;
+    while (list.some((x) => x.id === id)) id = `${slug(nm)}-${n++}`;
+    p = { id, name: nm, path: root };
     list.push(p); saveProjects(list);
   }
   let setup = null;
@@ -294,7 +292,38 @@ on('POST', /^\/api\/projects$/, async (req, res) => {
     const c = await gitCommit(root, 'Initial commit (Agent-Squad)');
     commit = { ok: c.ok, out: (c.out + c.err).trim() };
   }
-  send(res, 200, { project: p, created, setup, commit, ...(await scaffoldState(root)) });
+  return { code: 200, body: { project: p, created, setup, commit, ...(await scaffoldState(root)) } };
+}
+
+on('POST', /^\/api\/projects$/, async (req, res) => {
+  const b = await readBody(req);
+  const r = await addProject(normPath(b.path), b.name, !!b.init);
+  send(res, r.code, r.body);
+});
+
+// Tạo project mới: thư mục <parent>/<name> + git init + file khung + commit đầu
+on('POST', /^\/api\/projects\/new$/, async (req, res) => {
+  const b = await readBody(req);
+  const name = String(b.name || '').trim();
+  if (!name) return send(res, 400, { error: 'Nhập tên project' });
+  const folder = slug(name);
+  const parent = normPath(b.parent || '~');
+  const dir = path.join(parent, folder);
+  if (fs.existsSync(dir) && fs.readdirSync(dir).length) return send(res, 400, { error: `Thư mục ${dir} đã có và không trống. Dùng "Thêm project có sẵn" hoặc đặt tên khác.` });
+  try { fs.mkdirSync(dir, { recursive: true }); } catch (e) { return send(res, 400, { error: e.message }); }
+  if (b.description) fs.writeFileSync(path.join(dir, 'README.md'), `# ${name}\n\n${String(b.description).trim()}\n`);
+  const r = await addProject(dir, name, true);
+  send(res, r.code, r.body);
+});
+
+// Cập nhật Agent-Squad (git pull) rồi tự khởi động lại dashboard (scripts/dashboard.sh chạy lại khi mã thoát 75)
+on('POST', /^\/api\/update$/, async (req, res) => {
+  const before = await run('git', ['-C', SQUAD, 'rev-parse', 'HEAD']);
+  const r = await run('git', ['-C', SQUAD, 'pull', '--ff-only'], { timeout: 120000 });
+  const after = await run('git', ['-C', SQUAD, 'rev-parse', 'HEAD']);
+  const changed = r.ok && before.out !== after.out;
+  send(res, r.ok ? 200 : 500, { ok: r.ok, changed, out: (r.out + r.err).trim() });
+  if (changed) setTimeout(() => process.exit(75), 300);
 });
 
 on('POST', /^\/api\/projects\/prune$/, (req, res) => {

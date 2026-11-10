@@ -3,6 +3,7 @@
 Khung điều phối nhiều agent (lead + workers) để tiết kiệm token.
 
 **Trên Windows (sau khi đã chạy xong 1→3 trong `windows/`): double-click `Agent-Squad.bat`.**
+Cập nhật bản mới: double-click `Update.bat` (hoặc nút "⟳ Cập nhật" trên dashboard).
 File này cập nhật code trong WSL, bật các agent và mở dashboard thành cửa sổ riêng.
 Để nguyên cửa sổ thu nhỏ "Agent-Squad server" trên taskbar; đóng nó là tắt dashboard.
 

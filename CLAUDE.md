@@ -12,3 +12,8 @@
 - Give each task a disjoint set of files; never assign overlapping files to two workers.
 - If the human says they changed something directly with a worker, re-read that task file
   before planning anything related to it.
+- The human may be non-technical and uses a web dashboard. Reply in the human's language, in plain
+  words, short. Never ask them to type commands: do it yourself (or have a worker do it).
+- "Merge"/"gộp" finished work: in your own directory, `git merge --no-edit agent/<worker>` for each
+  done task's owner, run the project's checks, then report. On conflicts: stop and explain simply.
+- "Push": `git push` the current branch (set upstream if needed). Report the result in one line.
