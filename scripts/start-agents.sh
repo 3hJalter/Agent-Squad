@@ -24,6 +24,7 @@ fi
 cd "$ROOT"
 git rev-parse HEAD >/dev/null 2>&1 || { echo "Repo chưa có commit nào. Hãy commit trước."; exit 1; }
 mkdir -p "$ROOT/.agents/tasks"
+GITDIR="$(git rev-parse --path-format=absolute --git-common-dir 2>/dev/null || echo "$ROOT/.git")"
 
 parse() { # parse <spec> -> đặt biến agent, model, effort; trả về 1 nếu không hợp lệ
   local s="$1"; effort=""; model=""
@@ -40,9 +41,12 @@ cmd_for() { # cmd_for <lead|worker> <window> -> lệnh chạy agent (dùng agent
       c="claude${model:+ --model '$model'}${effort:+ --effort '$effort'}"
       [ "$role" = lead ] || c="$c --add-dir '$ROOT/.agents' --append-system-prompt 'You are a WORKER (tmux window $w), not the lead: ignore the LEAD rules in CLAUDE.md and follow the worker rules in AGENTS.md.'" ;;
     codex)
-      # .agents là symlink ra ngoài worktree: cho Codex quyền ghi vào đó (--add-dir cần sandbox workspace-write)
-      c="codex --sandbox workspace-write --add-dir '$ROOT/.agents'${model:+ -m '$model'}${effort:+ -c 'model_reasoning_effort=\"$effort\"'}"
-      [ "$role" = worker ] || c="$c '$LEAD_PROMPT'" ;;
+      # Codex chặn mọi lệnh nếu .agents trong worktree là symlink, nên worker Codex không có symlink:
+      # dùng thẳng $ROOT/.agents và .git chung (--add-dir cần sandbox workspace-write)
+      c="codex --sandbox workspace-write --add-dir '$ROOT/.agents' --add-dir '$GITDIR'${model:+ -m '$model'}${effort:+ -c 'model_reasoning_effort=\"$effort\"'}"
+      if [ "$role" = worker ]; then
+        c="$c 'You are a WORKER (tmux window $w), not the lead: ignore the LEAD rules in CLAUDE.md and follow the worker rules in AGENTS.md. Your worktree has no .agents folder: wherever the rules or messages say \".agents/\", use $ROOT/.agents/ instead. Reply \"ready\" and wait.'"
+      else c="$c '$LEAD_PROMPT'"; fi ;;
     gemini)
       c="gemini --include-directories '$ROOT/.agents'${model:+ -m '$model'}"
       [ "$role" = worker ] || c="$c -i '$LEAD_PROMPT'" ;;
@@ -69,8 +73,12 @@ for spec in $WORKERS; do
   if [ ! -d "$WT" ]; then
     git worktree add "$WT" -b "agent/$w" 2>/dev/null || git worktree add "$WT" "agent/$w"
   fi
-  # dùng chung thư mục task với lead (không ghi đè nếu .agents trong worktree là thư mục thật)
-  [ -d "$WT/.agents" ] && [ ! -L "$WT/.agents" ] || ln -sfn "$ROOT/.agents" "$WT/.agents"
+  # dùng chung thư mục task với lead (không ghi đè nếu .agents trong worktree là thư mục thật);
+  # riêng Codex: không có symlink (xem cmd_for)
+  if [ ! -d "$WT/.agents" ] || [ -L "$WT/.agents" ]; then
+    rm -f "$WT/.agents"
+    [ "$agent" = codex ] || ln -s "$ROOT/.agents" "$WT/.agents"
+  fi
   tmux new-window -t "$SESSION" -n "$w" -c "$WT" "${ENVS[@]}" "$(cmd_for worker "$w"); exec bash"
   echo "$w  ($agent${model:+, model $model}${effort:+, effort $effort})" >> "$ROOT/.agents/workers.txt"
 done

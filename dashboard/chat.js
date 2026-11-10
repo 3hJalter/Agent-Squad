@@ -35,8 +35,12 @@ const LEAD_ROLE = 'You are the LEAD of Agent-Squad, chatting with the human thro
   'the human sees an "Allow" button and you will be told when it is granted. ' +
   'Reply in the human\'s language, short and in plain words.';
 const GRANT_RE = /^(network|[A-Za-z_][A-Za-z0-9_]{0,40}(\([^\n]{1,300}\))?)$/;
-const workerRole = (name) => `You are a WORKER named "${name}" (chat mode, no tmux), not the lead: ignore the LEAD rules in CLAUDE.md ` +
-  'and follow the worker rules in AGENTS.md. Be terse.';
+const workerRole = (name, agentsDir) => `You are a WORKER named "${name}" (chat mode, no tmux), not the lead: ignore the LEAD rules in CLAUDE.md ` +
+  'and follow the worker rules in AGENTS.md. Be terse.' +
+  (agentsDir ? ` Your worktree has no .agents folder: wherever the rules or messages say ".agents/", use ${agentsDir}/ instead.` : '');
+// Codex chặn mọi lệnh khi .agents trong worktree là symlink ("crosses a writable symlink"), nên worker
+// Codex không có symlink .agents mà dùng đường dẫn tuyệt đối <repo>/.agents (đã cho quyền bằng --add-dir).
+const noLink = (a) => a?.agent === 'codex';
 
 module.exports = function setupChat({ on, send, readBody, getCtx, loadProjects, withCtx, run }) {
   const live = new Map(); // key root|name -> { child, msg, queue: [] }
@@ -89,7 +93,7 @@ module.exports = function setupChat({ on, send, readBody, getCtx, loadProjects, 
       if (session) args.push('--resume', session);
       return { cmd: 'claude', args, stdin: prompt };
     }
-    const first = session ? prompt : (lead ? LEAD_ROLE : workerRole(name)) + '\n\n' + prompt;
+    const first = session ? prompt : (lead ? LEAD_ROLE : workerRole(name, noLink(a) && extraDir)) + '\n\n' + prompt;
     if (a.agent === 'codex') {
       const args = ['exec', '--json', '-s', 'workspace-write', '--add-dir', extraDir];
       if (a.gitDir) args.push('--add-dir', a.gitDir);
@@ -282,7 +286,10 @@ module.exports = function setupChat({ on, send, readBody, getCtx, loadProjects, 
       const link = path.join(wt, '.agents');
       let isRealDir = false;
       try { isRealDir = fs.lstatSync(link).isDirectory(); } catch { /* chưa có */ }
-      if (!isRealDir) { fs.rmSync(link, { force: true }); fs.symlinkSync(path.join(ctx.root, '.agents'), link); }
+      if (!isRealDir) {
+        fs.rmSync(link, { force: true });
+        if (!noLink(w)) fs.symlinkSync(path.join(ctx.root, '.agents'), link);
+      }
       st.agents[name] = { ...w, cwd: wt, gitDir };
       lines.push(`${name}  (${w.agent}${w.model ? ', model ' + w.model : ''}${w.effort ? ', effort ' + w.effort : ''})`);
     }
@@ -343,7 +350,7 @@ module.exports = function setupChat({ on, send, readBody, getCtx, loadProjects, 
           status = 'in-progress';
           const base = (await run('git', ['-C', ctx.root, 'branch', '--show-current'])).out.trim();
           const msg = `Do task ${id}: ${base ? `first run 'git merge --no-edit ${base}' to get the latest code (on conflicts set Status: blocked and explain), then ` : ''}` +
-            `read .agents/tasks/${id}.md and AGENTS.md, follow the task protocol exactly. Be terse.`;
+            `read ${noLink(st.agents[owner]) ? path.join(ctx.root, '.agents', 'tasks', id + '.md') : `.agents/tasks/${id}.md`} and AGENTS.md, follow the task protocol exactly. Be terse.`;
           enqueue(ctx, owner, msg, { role: 'system', text: `📋 Nhận việc ${id}: ${(text.split('\n')[0] || '').replace(/^#\s*(T-\d+\s*:?\s*)?/, '')}` });
         } else if (!first && last[id] !== status && (status === 'done' || status === 'blocked') && st.agents.lead) {
           enqueue(ctx, 'lead', `Worker updated ${id}. Read only its Status and Result in .agents/tasks/${id}.md, then report to me in 3 lines max.`,
