@@ -4,10 +4,10 @@ Khung điều phối nhiều agent (lead + workers) để tiết kiệm token.
 
 **Trên Windows (sau khi đã chạy xong 1→3 trong `windows/`): double-click `Agent-Squad.bat`.**
 Cập nhật bản mới: double-click `Update.bat` (hoặc nút "⟳ Cập nhật" trên dashboard).
-Nâng cấp chính Agent-Squad bằng agent: chọn project Agent-Squad trên dashboard, nhờ Lead làm và gộp code, rồi bấm
-"↻ Khởi động lại" (dashboard chạy thử bản mới trước; bản lỗi thì giữ nguyên bản đang chạy).
 File này cập nhật code trong WSL và mở dashboard thành cửa sổ riêng; bấm "Start agents" trên dashboard để bật agent.
 Để nguyên cửa sổ thu nhỏ "Agent-Squad server" trên taskbar; đóng nó là tắt dashboard.
+Nâng cấp chính Agent-Squad bằng agent: chọn project Agent-Squad trên dashboard, nhờ Lead làm và gộp code, rồi bấm
+"↻ Khởi động lại" (dashboard chạy thử bản mới trước; bản lỗi thì giữ nguyên bản đang chạy).
 
 - `AGENTS.md`: quy tắc chung cho mọi agent. `CLAUDE.md`: luật bổ sung cho lead.
 - `.agents/tasks/`: file task (không commit). Mẫu: `.agents/tasks/_template.md`.
