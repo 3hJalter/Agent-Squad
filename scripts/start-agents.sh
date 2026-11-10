@@ -25,8 +25,8 @@ for w in $WORKERS; do
   # dùng chung thư mục task với lead (không ghi đè nếu .agents trong worktree là thư mục thật)
   [ -d "$WT/.agents" ] && [ ! -L "$WT/.agents" ] || ln -sfn "$ROOT/.agents" "$WT/.agents"
   case "$w" in
-    # .agents là symlink ra ngoài worktree: cho Codex quyền ghi vào đó trong sandbox
-    codex) CMD="codex --add-dir '$ROOT/.agents'" ;;
+    # .agents là symlink ra ngoài worktree: cho Codex quyền ghi vào đó (--add-dir cần sandbox workspace-write)
+    codex) CMD="codex --sandbox workspace-write --add-dir '$ROOT/.agents'" ;;
     *)     CMD="$w" ;;
   esac
   tmux new-window -t "$SESSION" -n "$w" -c "$WT" "$CMD; exec bash"
