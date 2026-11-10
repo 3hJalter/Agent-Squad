@@ -397,7 +397,7 @@ on('GET', /^\/api\/state$/, async (req, res, _m, url) => {
   try { workersTxt = fs.readFileSync(path.join(ctx.root, '.agents', 'workers.txt'), 'utf8'); } catch { /* chưa start */ }
   send(res, 200, {
     project: { id: ctx.id, name: ctx.name, path: ctx.root }, session: ctx.session,
-    ...(await sessionInfo(ctx)), tasks: listTasks(ctx), workersTxt, ...(await scaffoldState(ctx.root)),
+    ...(await sessionInfo(ctx)), chat: chat.info(ctx), tasks: listTasks(ctx), workersTxt, ...(await scaffoldState(ctx.root)),
   });
 });
 
@@ -417,7 +417,18 @@ on('PUT', /^\/api\/task\/([^/]+)$/, async (req, res, m, url) => {
   send(res, 200, { ok: true });
 });
 
-const assign = (ctx, id, w) => run(path.join(SCRIPTS, 'assign.sh'), [id, w], { env: scriptEnv(ctx) });
+const chat = require('./chat')({ on, send, readBody, getCtx, loadProjects, withCtx, run });
+const validAgent = (a) => !!specOf(a) && { agent: a.agent, model: a.model || '', effort: a.effort || '' };
+
+const assign = async (ctx, id, w) => {
+  if (!chat.isActive(ctx)) return run(path.join(SCRIPTS, 'assign.sh'), [id, w], { env: scriptEnv(ctx) });
+  // chế độ chat: đặt Owner + Status: ready, bộ tự giao việc của chat.js sẽ chạy worker
+  const f = taskPath(ctx, id);
+  if (!fs.existsSync(f)) return { ok: false, out: '', err: 'Không có task' };
+  if (!chat.info(ctx).agents.some((a) => a.name === w && a.name !== 'lead')) return { ok: false, out: '', err: `Không có worker ${w}` };
+  fs.writeFileSync(f, fs.readFileSync(f, 'utf8').replace(/^Owner:.*$/m, `Owner: ${w}`).replace(/^Status:.*$/m, 'Status: ready'));
+  return { ok: true, out: `Đã giao ${id} cho ${w}`, err: '' };
+};
 
 on('POST', /^\/api\/task$/, async (req, res, _m, url) => {
   const ctx = getCtx(url);
@@ -463,14 +474,28 @@ on('POST', /^\/api\/start$/, async (req, res, _m, url) => {
   const b = await readBody(req);
   const lead = specOf(b.lead) || 'claude';
   const workers = (Array.isArray(b.workers) ? b.workers : []).map(specOf).filter(Boolean).join(' ') || 'codex';
+  chat.stopAll(ctx);
   const r = await run(path.join(SCRIPTS, 'start-agents.sh'), [], { env: scriptEnv(ctx, { LEAD: lead, WORKERS: workers }), timeout: 60000 });
   send(res, r.ok ? 200 : 500, { ok: r.ok, out: (r.out + r.err).trim() });
 });
 
 on('POST', /^\/api\/stop$/, async (req, res, _m, url) => {
   const ctx = getCtx(url);
-  const r = await tmux('kill-session', '-t', ctx.session);
-  send(res, 200, { ok: r.ok, out: r.err.trim() });
+  chat.stopAll(ctx);
+  await tmux('kill-session', '-t', ctx.session);
+  send(res, 200, { ok: true });
+});
+
+// Chế độ chat (agent chạy ẩn, dashboard hiện dạng tin nhắn). Xem dashboard/chat.js.
+on('POST', /^\/api\/chatmode\/start$/, async (req, res, _m, url) => {
+  const ctx = getCtx(url);
+  const b = await readBody(req);
+  const lead = validAgent(b.lead) || { agent: 'claude', model: '', effort: '' };
+  const workers = (Array.isArray(b.workers) ? b.workers : []).map(validAgent).filter(Boolean);
+  if (!workers.length) workers.push({ agent: 'codex', model: '', effort: '' });
+  await tmux('kill-session', '-t', ctx.session); // không chạy song song hai kiểu
+  try { const names = await chat.start(ctx, lead, workers); send(res, 200, { ok: true, agents: names }); }
+  catch (e) { send(res, 400, { error: e.message }); }
 });
 
 // Đính kèm file: lưu vào .agents/uploads/ (worker thấy qua symlink .agents) rồi trả về đường dẫn.

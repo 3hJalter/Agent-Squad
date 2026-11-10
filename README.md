@@ -4,7 +4,7 @@ Khung điều phối nhiều agent (lead + workers) để tiết kiệm token.
 
 **Trên Windows (sau khi đã chạy xong 1→3 trong `windows/`): double-click `Agent-Squad.bat`.**
 Cập nhật bản mới: double-click `Update.bat` (hoặc nút "⟳ Cập nhật" trên dashboard).
-File này cập nhật code trong WSL, bật các agent và mở dashboard thành cửa sổ riêng.
+File này cập nhật code trong WSL và mở dashboard thành cửa sổ riêng; bấm "Start agents" trên dashboard để bật agent.
 Để nguyên cửa sổ thu nhỏ "Agent-Squad server" trên taskbar; đóng nó là tắt dashboard.
 
 - `AGENTS.md`: quy tắc chung cho mọi agent. `CLAUDE.md`: luật bổ sung cho lead.
@@ -24,6 +24,13 @@ File này cập nhật code trong WSL, bật các agent và mở dashboard thàn
   Nhiều project: nút "+ Project" (duyệt thư mục, hộp thoại chọn thư mục của Windows, hoặc gõ `~/app` / `D:\Web\app`);
   thư mục chưa là repo thì tự `git init` + commit đầu. Mỗi project một phiên tmux riêng, danh sách lưu ở
   `~/.agent-squad/projects.json` (xoá khỏi danh sách không xoá file). Dashboard tự tạo file khung nếu repo chưa có.
+- Kiểu hiển thị (trong "Chọn agent & model"):
+  - **💬 Chat** (mặc định, `dashboard/chat.js`): agent chạy ẩn (`claude -p`, `codex exec`, `gemini -p`), dashboard hiện
+    tin nhắn dạng chat với các bước làm thu gọn được. Lead giao việc bằng `Status: ready`, dashboard tự chạy worker
+    và báo lead khi task xong. Quyền ban đầu an toàn: sửa file trong project, chạy lệnh git và lệnh kiểm tra, Codex
+    không có mạng. Khi agent bị chặn, tin nhắn có nút "Cho phép & làm tiếp" (cấp đúng lệnh/công cụ đó, hoặc quyền mạng
+    cho Codex); thu hồi ở mục "Nâng cao". Lịch sử ở `.agents/chat/`. Không cần tmux.
+  - **🖥 Terminal**: như cũ, mỗi agent một window tmux, dashboard hiện màn hình terminal.
 
 Chạy (trong WSL2/Linux, đã cài tmux, claude, codex):
 
