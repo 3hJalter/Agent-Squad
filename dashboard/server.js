@@ -10,7 +10,7 @@ const http = require('http');
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
-const { execFile } = require('child_process');
+const { execFile, spawn } = require('child_process');
 
 const SQUAD = path.resolve(__dirname, '..');
 const SCRIPTS = path.join(SQUAD, 'scripts');
@@ -318,14 +318,46 @@ on('POST', /^\/api\/projects\/new$/, async (req, res) => {
   send(res, r.code, r.body);
 });
 
-// Cập nhật Agent-Squad (git pull) rồi tự khởi động lại dashboard (scripts/dashboard.sh chạy lại khi mã thoát 75)
+// Thử chạy bản code hiện có trên đĩa ở một cổng tạm: nếu nó lỗi ngay khi khởi động thì không khởi động lại,
+// để dashboard đang chạy không bị tắt bởi một bản nâng cấp hỏng.
+function selfTest() {
+  return new Promise((resolve) => {
+    const c = spawn(process.execPath, [path.join(__dirname, 'server.js')], { env: { ...process.env, PORT: '0', SQUAD_SELFTEST: '1' }, stdio: ['ignore', 'pipe', 'pipe'] });
+    let out = '', done = false;
+    const end = (ok) => { if (!done) { done = true; c.kill('SIGTERM'); resolve({ ok, out: out.trim().slice(-1500) }); } };
+    c.stdout.on('data', (d) => { out += d; if (/Agent-Squad dashboard:/.test(out)) end(true); });
+    c.stderr.on('data', (d) => { out += d; });
+    c.on('exit', () => end(false));
+    setTimeout(() => end(false), 8000);
+  });
+}
+// Thoát với mã 75: scripts/dashboard.sh chạy lại server (đọc code mới).
+function restartSoon() {
+  setTimeout(() => { chat.killAll(); setTimeout(() => process.exit(75), 300); }, 300);
+}
+
+// Cập nhật Agent-Squad (git pull) rồi tự khởi động lại dashboard
 on('POST', /^\/api\/update$/, async (req, res) => {
   const before = await run('git', ['-C', SQUAD, 'rev-parse', 'HEAD']);
   const r = await run('git', ['-C', SQUAD, 'pull', '--ff-only'], { timeout: 120000 });
   const after = await run('git', ['-C', SQUAD, 'rev-parse', 'HEAD']);
   const changed = r.ok && before.out !== after.out;
-  send(res, r.ok ? 200 : 500, { ok: r.ok, changed, out: (r.out + r.err).trim() });
-  if (changed) setTimeout(() => process.exit(75), 300);
+  if (!changed) return send(res, r.ok ? 200 : 500, { ok: r.ok, changed, out: (r.out + r.err).trim() });
+  const t = await selfTest();
+  if (!t.ok) return send(res, 500, { ok: false, changed, out: 'Đã tải bản mới nhưng bản này không khởi động được, nên dashboard vẫn chạy bản cũ.\n' + t.out });
+  send(res, 200, { ok: true, changed, out: (r.out + r.err).trim() });
+  restartSoon();
+});
+
+// Khởi động lại dashboard để chạy code mới trên máy (ví dụ sau khi lead gộp bản nâng cấp)
+on('POST', /^\/api\/restart$/, async (req, res, _m, url) => {
+  const b = await readBody(req);
+  const busy = chat.busyCount();
+  if (busy && !b.force) return send(res, 409, { code: 'busy', busy, error: `${busy} agent đang làm việc. Khởi động lại sẽ dừng lượt đang chạy của chúng.` });
+  const t = await selfTest();
+  if (!t.ok) return send(res, 500, { error: 'Code mới không khởi động được, nên dashboard vẫn chạy bản hiện tại. Nhắn Lead sửa lỗi này:\n' + t.out });
+  send(res, 200, { ok: true });
+  restartSoon();
 });
 
 on('POST', /^\/api\/projects\/prune$/, (req, res) => {
