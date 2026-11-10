@@ -24,7 +24,13 @@ const KEEP = 300;
 const SAFE_CMDS = ['cd', 'ls', 'pwd', 'cat', 'head', 'tail', 'wc', 'find', 'grep', 'rg', 'sort', 'diff', 'mkdir',
   'git status', 'git diff', 'git log', 'git show', 'git add', 'git commit', 'git merge', 'git branch', 'git checkout',
   'git switch', 'git restore', 'git rev-parse', 'git ls-files',
+  'git -C', 'git -c', 'git worktree', 'git stash', 'git fetch', 'git pull', 'git cherry-pick', 'git rebase', 'git tag',
+  'git reset', 'git rm', 'git mv', 'git remote', 'git config --get',
+  'sed', 'awk', 'echo', 'printf', 'touch', 'cp', 'mv', 'jq', 'date', 'tr', 'cut', 'uniq', 'xargs', 'stat', 'test', 'true',
+  'node', 'npm ls', 'npm run',
   'bash -n', 'shellcheck', 'npm test', 'npm run test', 'npm run lint', 'npm run build', 'pytest'];
+// Luôn hỏi/chặn với Claude (kể cả khi lệnh khớp danh sách trên), trừ khi bạn đã bấm "Cho phép" đúng quyền đó.
+const CLAUDE_DENY = ['Bash(git push:*)', 'Bash(rm -rf:*)', 'Bash(sudo:*)'];
 const CLAUDE_TOOLS = ['Read', 'Edit', 'Write', 'MultiEdit', 'Glob', 'Grep', 'LS', 'TodoWrite', ...SAFE_CMDS.map((c) => `Bash(${c}:*)`)];
 const GEMINI_TOOLS = SAFE_CMDS.map((c) => `run_shell_command(${c})`);
 // Khi bạn bấm "Cho phép", quyền được cấp theo loại lệnh ("npm install …") chứ không chỉ đúng một câu lệnh,
@@ -34,6 +40,8 @@ function prefixesOf(cmd) {
   const out = [];
   for (const part of String(cmd || '').split(/&&|\|\||;|\||\n/)) {
     const w = part.trim().split(/\s+/).filter(Boolean);
+    // "git -C <dir> …" / "git -c k=v …" -> coi như "git …" để quyền và kiểm tra khớp theo lệnh con
+    if (w[0] === 'git') while (w[1] === '-C' || w[1] === '-c') w.splice(1, 2);
     if (!w.length || !/^[A-Za-z0-9._/-]+$/.test(w[0])) continue;
     const pre = TWO_WORD.has(w[0]) && /^[a-z][a-z0-9-]*$/.test(w[1] || '') ? `${w[0]} ${w[1]}` : w[0];
     if (!SAFE_CMDS.includes(pre) && !SAFE_CMDS.includes(w[0]) && !out.includes(pre)) out.push(pre);
@@ -99,11 +107,12 @@ module.exports = function setupChat({ on, send, readBody, getCtx, loadProjects, 
     const extraDir = path.join(ctx.root, '.agents');
     if (a.agent === 'claude') {
       const args = ['-p', '--output-format', 'stream-json', '--verbose', '--permission-mode', 'acceptEdits',
-        '--allowedTools', ...CLAUDE_TOOLS, ...tools, '--add-dir', extraDir,
-        '--append-system-prompt', lead ? LEAD_ROLE : workerRole(name)];
+        '--allowedTools', ...CLAUDE_TOOLS, ...tools, '--add-dir', extraDir,        '--append-system-prompt', lead ? LEAD_ROLE : workerRole(name)];
       if (a.model) args.push('--model', a.model);
       if (a.effort) args.push('--effort', a.effort);
       if (session) args.push('--resume', session);
+      const deny = CLAUDE_DENY.filter((d) => !tools.includes(d));
+      if (deny.length) args.push('--disallowedTools', ...deny);
       return { cmd: 'claude', args, stdin: prompt };
     }
     const first = session ? prompt : (lead ? LEAD_ROLE : workerRole(name, noLink(a) && extraDir)) + '\n\n' + prompt;
