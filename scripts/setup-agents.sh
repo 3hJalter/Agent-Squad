@@ -25,11 +25,11 @@ put AGENTS.md <<'EOF'
 # Agent rules (shared by ALL agents: lead and workers)
 
 ## Roles
-- LEAD (Claude Code, tmux window "lead"): the only agent that talks to the human by default.
-  Plans, writes task files, assigns workers, reads task summaries.
-  Does NOT read or edit source code itself; it delegates.
-- WORKERS (tmux windows "codex", optional "gemini"): each works in its own git worktree and
-  branch (agent/<name>) and executes ONE task at a time from .agents/tasks/<ID>.md.
+- LEAD (tmux window "lead"; Claude Code by default, can be Codex or Gemini): the only agent that
+  talks to the human by default. Plans, writes task files, assigns workers, reads task summaries.
+  Does NOT read or edit source code itself; it delegates. Its extra rules are in CLAUDE.md.
+- WORKERS (the other tmux windows, listed in .agents/workers.txt): each works in its own git
+  worktree and branch (agent/<name>) and executes ONE task at a time from .agents/tasks/<ID>.md.
 
 ## Task protocol
 1. Tasks live in .agents/tasks/<ID>.md (copy of _template.md). One owner per task.
@@ -60,12 +60,14 @@ EOF
 put CLAUDE.md <<'EOF'
 @AGENTS.md
 
-# Extra rules for the LEAD (Claude Code)
+# Extra rules for the LEAD (whichever agent runs in tmux window "lead")
 - You are the lead. Turn the human's request into small, self-contained tasks.
 - Create a task: copy .agents/tasks/_template.md to .agents/tasks/T-<next number>.md and fill
   Goal, Files you may edit, Context (link files, do not paste), Done when.
-- Assign: run `scripts/assign.sh T-<n> codex` (or gemini). Then STOP and tell the human in one
-  line which task went to whom. Do not wait, poll or watch the worker.
+- Assign: run `scripts/assign.sh T-<n> <worker>` (worker names: .agents/workers.txt). If that fails
+  (e.g. your sandbox blocks tmux), set `Owner: <worker>` and `Status: ready` in the task file;
+  scripts/watch-tasks.sh assigns it. Then STOP and tell the human in one line which task went to
+  whom. Do not wait, poll or watch the worker.
 - When a worker notifies you, read only that task's Status and Result, then report in <= 3 lines.
 - Give each task a disjoint set of files; never assign overlapping files to two workers.
 - If the human says they changed something directly with a worker, re-read that task file
@@ -100,19 +102,22 @@ EOF
 # ---------------------------------------------------------------- scripts
 put scripts/start-agents.sh <<'EOF'
 #!/usr/bin/env bash
-# Dựng phiên tmux: window "lead" (claude) + mỗi worker một window, mỗi worker một git worktree,
-# và window "watch" chạy scripts/watch-tasks.sh để báo lead khi task xong/bị chặn.
-# Dùng:  scripts/start-agents.sh                          (lead claude, 1 worker codex)
+# Dựng phiên tmux: window "lead" + mỗi worker một window (mỗi worker một git worktree),
+# và window "watch" chạy watch-tasks.sh (báo lead khi task xong/bị chặn, tự giao task "ready").
+# Dùng:  scripts/start-agents.sh                                  (lead claude, 1 worker codex)
 #        WORKERS="codex gemini" scripts/start-agents.sh
-#        WORKERS="codex@gpt-5-codex claude@sonnet" LEAD_MODEL=opus scripts/start-agents.sh
-# Mỗi worker là <agent>[@<model>], agent: codex | claude | gemini. Tên window = agent, hoặc
-# agent-<model> khi có model (dấu chấm đổi thành "-").
+#        LEAD="codex@gpt-6.1-sol#high" WORKERS="claude@sonnet#medium codex#low" scripts/start-agents.sh
+# Mỗi agent viết <agent>[@<model>][#<effort>], agent: claude | codex | gemini.
+# Tên window worker = agent, hoặc agent-<model> khi có model (ký tự lạ đổi thành "-";
+# model đã bắt đầu bằng tên agent thì chỉ dùng model, ví dụ gemini-3-5-flash).
+# AGENTS_ROOT=<repo khác> chạy cho repo đó bằng chính các script này.
 set -euo pipefail
-ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+HERE="$(cd "$(dirname "$0")" && pwd)"
+ROOT="$(cd "${AGENTS_ROOT:-$HERE/..}" && pwd)"
 NAME="$(basename "$ROOT")"
 SESSION="${SESSION:-agents}"
 WORKERS="${WORKERS:-codex}"
-LEAD_MODEL="${LEAD_MODEL:-}"
+LEAD="${LEAD:-claude${LEAD_MODEL:+@$LEAD_MODEL}}"
 SAFE='^[A-Za-z0-9._:/-]*$'
 
 if tmux has-session -t "$SESSION" 2>/dev/null; then
@@ -121,42 +126,65 @@ fi
 cd "$ROOT"
 git rev-parse HEAD >/dev/null 2>&1 || { echo "Repo chưa có commit nào. Hãy commit trước."; exit 1; }
 mkdir -p "$ROOT/.agents/tasks"
-[[ "$LEAD_MODEL" =~ $SAFE ]] || { echo "LEAD_MODEL không hợp lệ: $LEAD_MODEL"; exit 1; }
 
-tmux new-session -d -s "$SESSION" -n lead -c "$ROOT" "claude${LEAD_MODEL:+ --model '$LEAD_MODEL'}; exec bash"
+parse() { # parse <spec> -> đặt biến agent, model, effort; trả về 1 nếu không hợp lệ
+  local s="$1"; effort=""; model=""
+  case "$s" in *'#'*) effort="${s##*#}"; s="${s%#*}" ;; esac
+  agent="${s%%@*}"; [ "$agent" = "$s" ] || model="${s#*@}"
+  [[ "$agent" =~ ^(claude|codex|gemini)$ && "$model" =~ $SAFE && "$effort" =~ ^[a-z]*$ ]]
+}
+
+LEAD_PROMPT="You are the LEAD in tmux window \"lead\". Follow the LEAD rules in CLAUDE.md and the shared rules in AGENTS.md. Available workers are listed in .agents/workers.txt. If running scripts/assign.sh fails (for example because your sandbox blocks tmux), set \"Owner: <worker>\" and \"Status: ready\" in the task file instead; the watcher assigns it. Reply \"ready\" and wait for the human."
+cmd_for() { # cmd_for <lead|worker> <window> -> lệnh chạy agent (dùng agent/model/effort)
+  local role="$1" w="$2" c
+  case "$agent" in
+    claude)
+      c="claude${model:+ --model '$model'}${effort:+ --effort '$effort'}"
+      [ "$role" = lead ] || c="$c --add-dir '$ROOT/.agents' --append-system-prompt 'You are a WORKER (tmux window $w), not the lead: ignore the LEAD rules in CLAUDE.md and follow the worker rules in AGENTS.md.'" ;;
+    codex)
+      # .agents là symlink ra ngoài worktree: cho Codex quyền ghi vào đó (--add-dir cần sandbox workspace-write)
+      c="codex --sandbox workspace-write --add-dir '$ROOT/.agents'${model:+ -m '$model'}${effort:+ -c 'model_reasoning_effort=\"$effort\"'}"
+      [ "$role" = worker ] || c="$c '$LEAD_PROMPT'" ;;
+    gemini)
+      c="gemini --include-directories '$ROOT/.agents'${model:+ -m '$model'}"
+      [ "$role" = worker ] || c="$c -i '$LEAD_PROMPT'" ;;
+  esac
+  printf '%s' "$c"
+}
+
+parse "$LEAD" || { echo "LEAD không hợp lệ: $LEAD"; exit 1; }
+LEADCMD="$(cmd_for lead lead)"
+: > "$ROOT/.agents/workers.txt"
+ENVS=(-e "SESSION=$SESSION" -e "AGENTS_ROOT=$ROOT")
+tmux new-session -d -s "$SESSION" -n lead -c "$ROOT" "${ENVS[@]}" "$LEADCMD; exec bash"
 for spec in $WORKERS; do
-  agent="${spec%%@*}"; model=""; [ "$agent" = "$spec" ] || model="${spec#*@}"
-  if ! [[ "$agent" =~ ^[A-Za-z0-9_-]+$ && "$model" =~ $SAFE ]]; then echo "Bỏ qua worker không hợp lệ: $spec"; continue; fi
-  w="$agent"; [ -z "$model" ] || w="$agent-$(printf '%s' "$model" | tr -c 'A-Za-z0-9_-' '-')"
+  if ! parse "$spec"; then echo "Bỏ qua worker không hợp lệ: $spec"; continue; fi
+  w="$agent"; m="$(printf '%s' "$model" | tr -c 'A-Za-z0-9_-' '-')"
+  case "$m" in "") ;; "$agent"*) w="$m" ;; *) w="$agent-$m" ;; esac
   WT="$ROOT/../$NAME-$w"
   if [ ! -d "$WT" ]; then
     git worktree add "$WT" -b "agent/$w" 2>/dev/null || git worktree add "$WT" "agent/$w"
   fi
   # dùng chung thư mục task với lead (không ghi đè nếu .agents trong worktree là thư mục thật)
   [ -d "$WT/.agents" ] && [ ! -L "$WT/.agents" ] || ln -sfn "$ROOT/.agents" "$WT/.agents"
-  case "$agent" in
-    # .agents là symlink ra ngoài worktree: cho Codex quyền ghi vào đó (--add-dir cần sandbox workspace-write)
-    codex)  CMD="codex --sandbox workspace-write --add-dir '$ROOT/.agents'${model:+ -m '$model'}" ;;
-    # CLAUDE.md có luật cho lead: nói rõ đây là worker
-    claude) CMD="claude --add-dir '$ROOT/.agents'${model:+ --model '$model'} --append-system-prompt 'You are a WORKER (tmux window $w), not the lead: ignore the LEAD rules in CLAUDE.md and follow the worker rules in AGENTS.md.'" ;;
-    gemini) CMD="gemini${model:+ -m '$model'}" ;;
-    *)      CMD="$agent" ;;
-  esac
-  tmux new-window -t "$SESSION" -n "$w" -c "$WT" "$CMD; exec bash"
+  tmux new-window -t "$SESSION" -n "$w" -c "$WT" "${ENVS[@]}" "$(cmd_for worker "$w"); exec bash"
+  echo "$w  ($agent${model:+, model $model}${effort:+, effort $effort})" >> "$ROOT/.agents/workers.txt"
 done
-tmux new-window -d -t "$SESSION" -n watch -c "$ROOT" "SESSION='$SESSION' scripts/watch-tasks.sh; exec bash"
+tmux new-window -d -t "$SESSION" -n watch -c "$ROOT" "${ENVS[@]}" "'$HERE/watch-tasks.sh'; exec bash"
 tmux select-window -t "$SESSION:lead"
 echo "Xong. Vào bằng: tmux attach -t $SESSION   (Ctrl-b n/p: đổi window, Ctrl-b d: thoát ra)"
 EOF
 
 put scripts/assign.sh <<'EOF'
 #!/usr/bin/env bash
-# Lead gọi: scripts/assign.sh T-001 codex
+# Lead gọi: scripts/assign.sh T-001 codex   (tên worker: xem .agents/workers.txt)
 set -euo pipefail
-ID="${1:?task id}"; W="${2:?worker (codex|gemini)}"; SESSION="${SESSION:-agents}"
-ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+ID="${1:?task id}"; W="${2:?worker (xem .agents/workers.txt)}"; SESSION="${SESSION:-agents}"
+HERE="$(cd "$(dirname "$0")" && pwd)"
+ROOT="$(cd "${AGENTS_ROOT:-$HERE/..}" && pwd)"
 F="$ROOT/.agents/tasks/$ID.md"
 [ -f "$F" ] || { echo "Không có $F"; exit 1; }
+tmux list-windows -t "$SESSION" -F '#W' 2>/dev/null | grep -qx -- "$W" || { echo "Không có window $W trong phiên $SESSION"; exit 1; }
 sed -i "s/^Owner:.*/Owner: $W/; s/^Status:.*/Status: in-progress/" "$F"
 MSG="Do task $ID: read .agents/tasks/$ID.md and AGENTS.md, follow the task protocol exactly. Be terse."
 tmux send-keys -t "$SESSION:$W" -l "$MSG"
@@ -178,23 +206,29 @@ EOF
 put scripts/watch-tasks.sh <<'EOF'
 #!/usr/bin/env bash
 # Chạy nền trong window "watch" (start-agents.sh tự bật). Không tốn token:
-# mỗi vài giây đọc dòng "Status:" của .agents/tasks/T-*.md; khi một task chuyển sang
-# done hoặc blocked thì gõ thông báo vào window lead (thay cho việc worker tự gọi tmux,
-# vì sandbox của worker có thể chặn tmux).
+# mỗi vài giây đọc dòng "Status:" của .agents/tasks/T-*.md;
+# - done/blocked: gõ thông báo vào window lead (thay cho việc worker tự gọi tmux,
+#   vì sandbox của worker có thể chặn tmux);
+# - ready: giao task cho worker ở dòng "Owner:" (cho lead không gọi được tmux, ví dụ Codex).
 set -uo pipefail
-ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+HERE="$(cd "$(dirname "$0")" && pwd)"
+ROOT="$(cd "${AGENTS_ROOT:-$HERE/..}" && pwd)"
 DIR="$ROOT/.agents/tasks"; SESSION="${SESSION:-agents}"; INTERVAL="${INTERVAL:-5}"
+export AGENTS_ROOT="$ROOT" SESSION
 declare -A last
 
-status_of() { sed -n 's/^Status:[[:space:]]*//p' "$1" | head -n1 | tr -d '\r[:space:]'; }
+field() { sed -n "s/^$1:[[:space:]]*//p" "$2" | head -n1 | tr -d '\r[:space:]'; }
 
 scan() { # scan <notify 0|1>
   local f id st
   for f in "$DIR"/T-*.md; do
     [ -f "$f" ] || continue
-    id="$(basename "$f" .md)"; st="$(status_of "$f")"
-    if [ "$1" = 1 ] && [ "${last[$id]:-}" != "$st" ] && { [ "$st" = done ] || [ "$st" = blocked ]; }; then
-      SESSION="$SESSION" "$ROOT/scripts/notify.sh" "$id" && echo "$(date +%T) $id -> $st (đã báo lead)"
+    id="$(basename "$f" .md)"; st="$(field Status "$f")"
+    if [ "$st" = ready ]; then
+      "$HERE/assign.sh" "$id" "$(field Owner "$f")" && echo "$(date +%T) $id -> đã giao (ready)"
+      st="$(field Status "$f")"
+    elif [ "$1" = 1 ] && [ "${last[$id]:-}" != "$st" ] && { [ "$st" = done ] || [ "$st" = blocked ]; }; then
+      "$HERE/notify.sh" "$id" && echo "$(date +%T) $id -> $st (đã báo lead)"
     fi
     last[$id]="$st"
   done
