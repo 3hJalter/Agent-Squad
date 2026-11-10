@@ -271,7 +271,7 @@ module.exports = function setupChat({ on, send, readBody, getCtx, loadProjects, 
     const lines = [];
     const repoName = path.basename(ctx.root);
     for (const w of workers) {
-      const name = winName(w);
+      const name = w.name || winName(w);
       if (st.agents[name] || name === 'lead') continue;
       const wt = path.resolve(ctx.root, '..', `${repoName}-${name}`);
       if (!fs.existsSync(wt)) {

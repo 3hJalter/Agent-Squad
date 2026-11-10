@@ -70,7 +70,8 @@ dialog::backdrop{background:rgba(0,0,0,.45)}
 .box{border:1px solid var(--line);border-radius:8px;padding:10px;display:grid;gap:8px}
 .box h4{margin:0;font-size:13px}
 details summary{cursor:pointer;color:var(--muted);font-size:12px}
-.arow{display:grid;grid-template-columns:110px minmax(0,1.6fr) 110px 34px;gap:8px;align-items:center}
+#cfgSummary{max-width:340px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.arow{display:grid;grid-template-columns:130px 110px minmax(0,1.6fr) 110px 34px;gap:8px;align-items:center}
 .arow.head{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em}
 .arow .mcell{display:flex;gap:6px;min-width:0}.arow .mcell select,.arow .mcell input{flex:1;min-width:0}
 .banner{margin:10px 16px 0;padding:8px 12px;border:1px solid var(--blocked);border-radius:8px;background:var(--panel);display:flex;gap:10px;align-items:center;flex-wrap:wrap}
@@ -215,15 +216,15 @@ details.adv summary{padding:4px 10px 8px;font-size:12px;color:var(--muted);curso
       <p class="hint" style="margin:0" id="vmHint"></p>
     </div>
     <div class="box"><h4>Lead (nói chuyện với bạn, chia và giao việc)</h4>
-      <div class="arow head"><span>Agent</span><span>Model</span><span>Effort</span><span></span></div>
+      <div class="arow head"><span>Tên</span><span>Agent</span><span>Model</span><span>Effort</span><span></span></div>
       <div id="cfgLead"></div>
     </div>
     <div class="box"><h4>Workers (làm từng task)</h4>
-      <div class="arow head"><span>Agent</span><span>Model</span><span>Effort</span><span></span></div>
+      <div class="arow head"><span>Tên</span><span>Agent</span><span>Model</span><span>Effort</span><span></span></div>
       <div id="cfgWorkers" style="display:grid;gap:6px"></div>
       <div class="row"><button id="cfgAdd" class="small">+ Thêm worker</button></div>
     </div>
-    <p class="hint" style="margin:0">"mặc định" = để agent tự chọn. Chọn "Khác…" để gõ tên model không có trong danh sách (danh sách nằm ở dashboard/catalog.json). Gemini CLI chưa có tuỳ chọn effort. Cấu hình lưu riêng cho từng project và chỉ áp dụng khi Start: nếu phiên đang chạy thì Stop rồi Start lại.</p>
+    <p class="hint" style="margin:0">Đặt tên để phân biệt các worker (ví dụ frontend, backend, test); nhiều worker dùng cùng agent và model vẫn được, để trống thì tự đặt tên. "mặc định" = để agent tự chọn. Chọn "Khác…" để gõ tên model không có trong danh sách (danh sách nằm ở dashboard/catalog.json). Gemini CLI chưa có tuỳ chọn effort. Cấu hình lưu riêng cho từng project và chỉ áp dụng khi Start: nếu phiên đang chạy thì Stop rồi Start lại.</p>
     <div class="row"><span class="spacer"></span><button id="cfgSave">Lưu</button><button id="cfgSaveStart" class="primary">Lưu &amp; Start</button></div>
   </div>
 </dialog>
@@ -293,7 +294,7 @@ async function loadProjects(){
 }
 function switchProject(id){
   proj = id; localSet('proj', id); state = null; lastStatus = null; win = localGet('win.'+id) || 'lead';
-  cfg = loadCfg(); $('#cfgSummary').textContent = cfgSummaryText(); delete $('#term').dataset.seen;
+  cfg = loadCfg(); $('#cfgSummary').textContent = $('#cfgSummary').title = cfgSummaryText(); delete $('#term').dataset.seen;
   attachments=[]; leadAttachments=[]; renderChips();
   refreshState().then(refreshPane);
 }
@@ -382,7 +383,18 @@ function loadCfg(){
 }
 let cfg = loadCfg();
 const winName = (w)=>{ const m=(w.model||'').replace(/[^A-Za-z0-9_-]/g,'-'); return !m ? w.agent : m.startsWith(w.agent) ? m : `${w.agent}-${m}` };
-const descr = (a)=> a.agent + ([a.model,a.effort].filter(Boolean).length ? ` (${[a.model,a.effort].filter(Boolean).join(', ')})` : '');
+const slugName = (s)=>{ let n=String(s||'').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/đ/g,'d').replace(/[^a-z0-9_-]+/g,'-').replace(/^-+|-+$/g,'').slice(0,30); if(n==='lead'||n==='watch') n+='-1'; return n };
+// Tên worker: tên bạn đặt, hoặc tự sinh từ agent/model; trùng thì thêm -2, -3...
+function resolveNames(list){
+  const used = new Set(list.map(w=>slugName(w.name)).filter(Boolean)); const out=[];
+  for(const w of list){
+    let n = slugName(w.name);
+    if(!n){ const base = winName(w); n = base; for(let k=2; used.has(n); k++) n = `${base}-${k}`; used.add(n) }
+    out.push(n);
+  }
+  return out;
+}
+const descr = (a)=> (a.name ? a.name+': ' : '') + a.agent + ([a.model,a.effort].filter(Boolean).length ? ` (${[a.model,a.effort].filter(Boolean).join(', ')})` : '');
 function cfgSummaryText(){return (cfg.mode==='terminal'?'🖥 ':'💬 ') + 'lead: ' + descr(cfg.lead) + ' · workers: ' + cfg.workers.map(descr).join(', ')}
 
 function agentRow(a, i, removable){
@@ -391,6 +403,7 @@ function agentRow(a, i, removable){
   const opts = ['<option value="">mặc định</option>', ...cat.models.map(m=>`<option${m===a.model?' selected':''}>${esc(m)}</option>`), `<option value="__other"${custom?' selected':''}>Khác…</option>`].join('');
   const eff = cat.efforts.length ? ['<option value="">mặc định</option>', ...cat.efforts.map(e=>`<option${e===a.effort?' selected':''}>${e}</option>`)].join('') : '<option value="">(không có)</option>';
   return `<div class="arow" data-i="${i}">
+    ${removable?`<input class="nm" maxlength="30" placeholder="${esc(winName(a))}" value="${esc(a.name||'')}" title="Tên để phân biệt worker, ví dụ frontend, backend, test">`:'<span class="hint">lead</span>'}
     <select class="ag">${AGENTS.map(x=>`<option value="${x}"${x===a.agent?' selected':''}>${esc(catalog[x]?.label||x)}</option>`).join('')}</select>
     <span class="mcell"><select class="md">${opts}</select><input class="mdc" placeholder="tên model" value="${custom?esc(a.model):''}"${custom?'':' hidden'}></span>
     <select class="ef"${cat.efforts.length?'':' disabled'}>${eff}</select>
@@ -398,7 +411,8 @@ function agentRow(a, i, removable){
 }
 function readRow(r){
   const md=r.querySelector('.md').value;
-  return {agent:r.querySelector('.ag').value, model: md==='__other' ? r.querySelector('.mdc').value.trim() : md, effort:r.querySelector('.ef').value};
+  const nm=r.querySelector('.nm');
+  return {...(nm?{name:slugName(nm.value)}:{}), agent:r.querySelector('.ag').value, model: md==='__other' ? r.querySelector('.mdc').value.trim() : md, effort:r.querySelector('.ef').value};
 }
 function readCfgForm(){
   const workers=[...document.querySelectorAll('#cfgWorkers .arow')].map(readRow);
@@ -418,13 +432,14 @@ function renderCfg(){
 }
 function saveCfg(){
   const c = readCfgForm();
-  const names = c.workers.map(winName);
-  if(new Set(names).size!==names.length){toast('Có hai worker cùng agent và model. Hãy đổi model của một worker.','err'); return false}
-  cfg=c; localSet('cfg.'+proj, JSON.stringify(cfg)); $('#cfgSummary').textContent = cfgSummaryText(); return true;
+  const typed = c.workers.map(w=>w.name).filter(Boolean);
+  if(new Set(typed).size!==typed.length){toast('Có hai worker trùng tên. Hãy đặt tên khác cho một worker.','err'); return false}
+  resolveNames(c.workers).forEach((n,i)=>{ c.workers[i].name = n });
+  cfg=c; localSet('cfg.'+proj, JSON.stringify(cfg)); $('#cfgSummary').textContent = $('#cfgSummary').title = cfgSummaryText(); return true;
 }
 $('#btnCfg').onclick = ()=>{cfg=loadCfg(); renderCfg(); $('#cfgProj').textContent = '· '+($('#projSel').selectedOptions[0]?.textContent||''); $('#dlgCfg').showModal()};
 $('#cfgClose').onclick = ()=>$('#dlgCfg').close();
-$('#cfgAdd').onclick = ()=>{cfg = readCfgForm(); cfg.workers.push({agent:'codex',model:'',effort:''}); renderCfg()};
+$('#cfgAdd').onclick = ()=>{cfg = readCfgForm(); const w={agent:'codex',model:'',effort:''}; w.name = resolveNames([...cfg.workers, w]).pop(); cfg.workers.push(w); renderCfg()};
 $('#dlgCfg').addEventListener('click',e=>{const b=e.target.closest('.rm'); if(!b) return; cfg=readCfgForm(); cfg.workers.splice(+b.closest('.arow').dataset.i,1); renderCfg()});
 $('#dlgCfg').addEventListener('change',e=>{
   const row=e.target.closest('.arow'); if(!row) return;
@@ -443,7 +458,7 @@ function tabList(){
 }
 function workers(){
   const fromSession = isRunning() ? tabList().map(w=>w.name).filter(n=>!['lead','watch'].includes(n)) : [];
-  return [...new Set(fromSession.length ? fromSession : cfg.workers.map(winName))];
+  return [...new Set(fromSession.length ? fromSession : resolveNames(cfg.workers))];
 }
 function fillWorkers(sel, pick){sel.innerHTML = workers().map(w=>`<option${w===pick?' selected':''}>${esc(w)}</option>`).join('')}
 
@@ -718,8 +733,9 @@ async function openTask(id){
 async function startAgents(){
   $('#btnStart').disabled=true;
   try{
-    if(cfg.mode==='terminal'){ const r=await api('POST','/api/start',{lead:cfg.lead, workers:cfg.workers}); toast(r.out||'Đã start','ok') }
-    else { await api('POST','/api/chatmode/start',{lead:cfg.lead, workers:cfg.workers}); win='lead'; localSet('win.'+proj,win); chatSig=''; toast('Đã sẵn sàng. Nhắn cho Lead ở khung chat nhé.','ok') }
+    const names = resolveNames(cfg.workers), ws = cfg.workers.map((w,i)=>({...w, name:names[i]}));
+    if(cfg.mode==='terminal'){ const r=await api('POST','/api/start',{lead:cfg.lead, workers:ws}); toast(r.out||'Đã start','ok') }
+    else { await api('POST','/api/chatmode/start',{lead:cfg.lead, workers:ws}); win='lead'; localSet('win.'+proj,win); chatSig=''; toast('Đã sẵn sàng. Nhắn cho Lead ở khung chat nhé.','ok') }
   }catch(e){toast(e.message,'err')}
   $('#btnStart').disabled=false; await refreshState(); loadProjects().catch(()=>{});
 }

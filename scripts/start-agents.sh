@@ -5,6 +5,7 @@
 #        WORKERS="codex gemini" scripts/start-agents.sh
 #        LEAD="codex@gpt-6.1-sol#high" WORKERS="claude@sonnet#medium codex#low" scripts/start-agents.sh
 # Mỗi agent viết <agent>[@<model>][#<effort>], agent: claude | codex | gemini.
+# Worker có thể đặt tên riêng: <tên>=<agent>..., ví dụ WORKERS="frontend=codex#high backend=codex#low".
 # Tên window worker = agent, hoặc agent-<model> khi có model (ký tự lạ đổi thành "-";
 # model đã bắt đầu bằng tên agent thì chỉ dùng model, ví dụ gemini-3-5-flash).
 # AGENTS_ROOT=<repo khác> chạy cho repo đó bằng chính các script này.
@@ -55,9 +56,15 @@ LEADCMD="$(cmd_for lead lead)"
 ENVS=(-e "SESSION=$SESSION" -e "AGENTS_ROOT=$ROOT")
 tmux new-session -d -s "$SESSION" -n lead -c "$ROOT" "${ENVS[@]}" "$LEADCMD; exec bash"
 for spec in $WORKERS; do
+  w=""; case "$spec" in *=*) w="${spec%%=*}"; spec="${spec#*=}" ;; esac
   if ! parse "$spec"; then echo "Bỏ qua worker không hợp lệ: $spec"; continue; fi
-  w="$agent"; m="$(printf '%s' "$model" | tr -c 'A-Za-z0-9_-' '-')"
-  case "$m" in "") ;; "$agent"*) w="$m" ;; *) w="$agent-$m" ;; esac
+  if [ -z "$w" ]; then
+    w="$agent"; m="$(printf '%s' "$model" | tr -c 'A-Za-z0-9_-' '-')"
+    case "$m" in "") ;; "$agent"*) w="$m" ;; *) w="$agent-$m" ;; esac
+  fi
+  if [[ ! "$w" =~ ^[A-Za-z0-9_-]{1,30}$ || "$w" = lead || "$w" = watch ]] || tmux list-windows -t "$SESSION" -F '#W' | grep -qx -- "$w"; then
+    echo "Bỏ qua worker: tên \"$w\" không hợp lệ hoặc bị trùng"; continue
+  fi
   WT="$ROOT/../$NAME-$w"
   if [ ! -d "$WT" ]; then
     git worktree add "$WT" -b "agent/$w" 2>/dev/null || git worktree add "$WT" "agent/$w"

@@ -10,7 +10,7 @@ File này cập nhật code trong WSL và mở dashboard thành cửa sổ riên
 - `AGENTS.md`: quy tắc chung cho mọi agent. `CLAUDE.md`: luật bổ sung cho lead.
 - `.agents/tasks/`: file task (không commit). Mẫu: `.agents/tasks/_template.md`.
 - `scripts/start-agents.sh`: dựng phiên tmux (lead và workers là claude/codex/gemini, mỗi worker một git worktree).
-  Mỗi agent viết `<agent>[@<model>][#<effort>]`, ví dụ
+  Mỗi agent viết `[<tên>=]<agent>[@<model>][#<effort>]` (tên chỉ cho worker, để phân biệt nhiều worker cùng model), ví dụ
   `LEAD="codex@gpt-6.1-sol#high" WORKERS="claude@opus#xhigh gemini@gemini-3.5-flash" scripts/start-agents.sh`
   (trên dashboard: nút "Chọn agent & model"; danh sách model/effort ở `dashboard/catalog.json`).
   Lead không gọi được tmux (ví dụ Codex trong sandbox) thì đặt `Status: ready`, `watch-tasks.sh` sẽ tự giao.
