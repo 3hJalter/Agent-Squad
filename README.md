@@ -8,6 +8,7 @@ File này cập nhật code trong WSL và mở dashboard thành cửa sổ riên
 Để nguyên cửa sổ thu nhỏ "Agent-Squad server" trên taskbar; đóng nó là tắt dashboard.
 Nâng cấp chính Agent-Squad bằng agent: chọn project Agent-Squad trên dashboard, nhờ Lead làm và gộp code, rồi bấm
 "↻ Khởi động lại" (dashboard chạy thử bản mới trước; bản lỗi thì giữ nguyên bản đang chạy).
+Ổ C: đầy? `windows/5-move-wsl-to-D.bat` chuyển cả Ubuntu (project, worker, công cụ) sang `D:\WSL\Ubuntu`, giữ nguyên dữ liệu.
 
 - `AGENTS.md`: quy tắc chung cho mọi agent. `CLAUDE.md`: luật bổ sung cho lead.
 - `.agents/tasks/`: file task (không commit). Mẫu: `.agents/tasks/_template.md`.
