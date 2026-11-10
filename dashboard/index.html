@@ -159,6 +159,7 @@ details.adv summary{padding:4px 10px 8px;font-size:12px;color:var(--muted);curso
     <div class="sendbar">
       <button id="btnAttach" title="Đính kèm file (hoặc kéo thả / dán ảnh vào ô nhắn)">📎</button>
       <textarea id="msg" placeholder="Nhắn cho agent… (Enter để gửi, Shift+Enter xuống dòng, kéo thả hoặc dán ảnh/file vào đây)"></textarea>
+      <button id="btnStopNow" class="danger" hidden title="Dừng ngay việc agent đang làm (phím Esc trong ô nhắn)">⏹ Dừng</button>
       <button id="btnSend" class="primary">Gửi</button>
     </div>
     <div class="chips" id="chips"></div>
@@ -558,11 +559,12 @@ function detectPrompts(text){
 function renderStatus(prompts){
   const st=$('#agentStatus'); st.className='pill';
   st.hidden = !state?.running;
-  if(!state?.running){st.innerHTML='';return}
+  if(!state?.running){st.innerHTML=''; $('#btnStopNow').hidden=true; return}
   const busy = Date.now()-paneChanged < 4000;
   if(prompts.length){st.classList.add('wait'); st.innerHTML='<span class="dot"></span>Đang chờ bạn chọn'}
   else if(busy){st.classList.add('busy'); st.innerHTML='<span class="dot"></span>Đang làm việc…'}
   else st.innerHTML='<span class="dot on"></span>Sẵn sàng';
+  $('#btnStopNow').hidden = !busy || !!prompts.length;
   const q=$('#quick');
   q.hidden = !prompts.length;
   q.innerHTML = prompts.length ? '<b>Agent đang hỏi:</b>' + prompts.map(p=>`<button data-key="${esc(p.key)}" class="${p.key==='1'||p.key==='y'||p.key==='Enter'?'primary':''}">${esc(p.label)}</button>`).join('') + '<button data-key="Escape" title="Huỷ / thoát câu hỏi">Huỷ (Esc)</button>' : '';
@@ -654,13 +656,19 @@ async function refreshChat(){
     }
     const st=$('#agentStatus'); st.hidden=false; st.className='pill'+(j.busy?' busy':'');
     st.innerHTML = j.busy ? `<span class="dot"></span>Đang làm việc…${j.queued?` (+${j.queued} tin chờ)`:''}` : '<span class="dot on"></span>Sẵn sàng';
-    $('#quick').hidden=true; $('#btnTurnStop').disabled = !j.busy;
+    $('#quick').hidden=true; $('#btnTurnStop').disabled = !j.busy; $('#btnStopNow').hidden = !j.busy;
     const g = (state?.chat?.agents.find(a=>a.name===win)?.grants)||[];
     $('#btnRevoke').hidden = !g.length; $('#grantList').textContent = g.length ? 'Quyền đã cấp thêm: '+g.join(', ') : '';
   }catch(e){ $('#chatlog').innerHTML = `<div class="chatempty">${esc(e.message)}</div>`; chatSig='' }
 }
 $('#btnRevoke').onclick = async()=>{ if(!confirm('Thu hồi mọi quyền đã cấp thêm cho agent này?')) return; try{await api('POST',`/api/chat/${encodeURIComponent(win)}/revoke`); await refreshState(); chatSig=''; refreshChat()}catch(e){toast(e.message,'err')} };
-$('#btnTurnStop').onclick = async()=>{try{await api('POST',`/api/chat/${encodeURIComponent(win)}/stop`); toast('Đã dừng','ok'); refreshChat()}catch(e){toast(e.message,'err')}};
+async function stopNow(){
+  try{
+    if(chatOn()){ await api('POST',`/api/chat/${encodeURIComponent(win)}/stop`); toast('Đã dừng. Bạn có thể nhắn tiếp để giao việc khác.','ok'); setTimeout(refreshChat,500) }
+    else { await api('POST','/api/send',{win,key:'Escape'}); toast('Đã gửi lệnh dừng (Esc) cho agent.','ok'); setTimeout(refreshPane,500) }
+  }catch(e){toast(e.message,'err')}
+}
+$('#btnTurnStop').onclick = stopNow; $('#btnStopNow').onclick = stopNow;
 $('#btnReset').onclick = async()=>{
   if(!confirm(`Bắt đầu cuộc trò chuyện mới với ${win==='lead'?'Lead':win}? Agent sẽ quên nội dung đã nói (task và code không bị ảnh hưởng).`)) return;
   try{await api('POST',`/api/chat/${encodeURIComponent(win)}/reset`); chatSig=''; refreshChat()}catch(e){toast(e.message,'err')}
@@ -764,7 +772,7 @@ $('#tabs').addEventListener('click',e=>{const b=e.target.closest('[data-win]'); 
 $('#keys').innerHTML = KEYS.map(([k,l])=>`<button class="small" data-key="${k}">${l}</button>`).join('') + '<span class="hint" style="align-self:center">gửi phím vào window đang chọn</span>';
 $('#keys').addEventListener('click',async e=>{const b=e.target.closest('[data-key]'); if(!b) return; try{await api('POST','/api/send',{win,key:b.dataset.key}); setTimeout(refreshPane,300)}catch(x){toast(x.message,'err')}});
 $('#btnSend').onclick = sendMsg;
-$('#msg').addEventListener('keydown',e=>{if(e.key==='Enter'&&!e.shiftKey&&!e.isComposing){e.preventDefault();sendMsg()}});
+$('#msg').addEventListener('keydown',e=>{if(e.key==='Enter'&&!e.shiftKey&&!e.isComposing){e.preventDefault();sendMsg()} if(e.key==='Escape'&&!$('#btnStopNow').hidden){e.preventDefault();stopNow()}});
 
 $('#btnStart').onclick = startAgents;
 $('#btnStop').onclick = async()=>{
