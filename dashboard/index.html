@@ -63,7 +63,7 @@ dialog::backdrop{background:rgba(0,0,0,.45)}
 .chip{display:inline-flex;gap:6px;align-items:center;font-size:12px;border:1px solid var(--line);border-radius:99px;padding:2px 4px 2px 10px;background:var(--bg)}
 .chip button{border:0;padding:0 6px;background:none}
 .sendbar textarea.drag{border-color:var(--accent);outline:2px dashed var(--accent)}
-.seg{display:inline-flex;border:1px solid var(--line);border-radius:8px;overflow:hidden}
+.seg{display:inline-flex;justify-self:start;border:1px solid var(--line);border-radius:8px;overflow:hidden}
 .seg button{border:0;border-radius:0;padding:6px 14px}
 .seg button.sel{background:var(--accent);color:var(--accent-text)}
 .wrow{display:grid;grid-template-columns:120px 1fr auto;gap:8px;align-items:center}
@@ -96,6 +96,32 @@ code{font:12px ui-monospace,Consolas,monospace}
 .suggest button:hover{color:var(--text)}
 details.adv summary{padding:4px 10px 8px;font-size:12px;color:var(--muted);cursor:pointer}
 .pill.busy .dot{background:var(--prog)}.pill.wait .dot{background:var(--blocked)}
+.chatlog{flex:1;overflow:auto;padding:14px 12px;display:flex;flex-direction:column;gap:10px;background:var(--bg);min-height:200px}
+.msg{max-width:88%;padding:9px 12px;border-radius:14px;line-height:1.5;word-break:break-word;background:var(--panel);border:1px solid var(--line)}
+.msg.you{align-self:flex-end;background:var(--accent);color:var(--accent-text);border-color:var(--accent);border-bottom-right-radius:4px;white-space:pre-wrap}
+.msg.agent{align-self:flex-start;border-bottom-left-radius:4px}
+.msg.system{align-self:center;background:none;border:0;color:var(--muted);font-size:12px;padding:2px 8px;text-align:center;max-width:95%}
+.msg .who{font-size:11px;color:var(--muted);margin-bottom:3px}
+.msg p{margin:0 0 6px}.msg p:last-child{margin-bottom:0}
+.msg ul,.msg ol{margin:4px 0 6px;padding-left:20px}
+.msg pre{background:var(--term);color:var(--term-text);padding:8px 10px;border-radius:6px;overflow:auto;font:12px/1.4 ui-monospace,Consolas,monospace;white-space:pre-wrap;margin:6px 0}
+.msg :not(pre)>code{background:color-mix(in srgb,var(--line) 60%,transparent);padding:0 4px;border-radius:4px}
+.msg h4{margin:6px 0 4px;font-size:14px}
+.steps{margin:2px 0 6px;font-size:12px;color:var(--muted)}
+.steps summary{color:var(--muted)}
+.steps ol{list-style:none;padding:0;margin:6px 0 0;display:grid;gap:3px}
+.steps li{display:grid;grid-template-columns:20px minmax(0,1fr);gap:4px}
+.steps li.err{color:var(--blocked)}
+.steps li pre{grid-column:2;margin:2px 0;font-size:11px;max-height:140px}
+.msg .errbox{margin-top:6px;padding:6px 8px;border-left:3px solid var(--blocked);background:color-mix(in srgb,var(--blocked) 8%,transparent);font-size:12.5px;white-space:pre-wrap}
+.typing{display:inline-flex;gap:4px;padding:4px 0}.typing i{width:6px;height:6px;border-radius:50%;background:var(--muted);animation:bl 1.2s infinite}
+.typing i:nth-child(2){animation-delay:.2s}.typing i:nth-child(3){animation-delay:.4s}
+@keyframes bl{0%,80%,100%{opacity:.25}40%{opacity:1}}
+.grant{margin-top:8px;padding:8px 10px;border:1px solid var(--prog);border-radius:8px;background:color-mix(in srgb,var(--prog) 8%,transparent);display:grid;gap:6px;font-size:13px}
+.grant ul{margin:0;padding-left:18px}.grant .row{gap:6px}
+.chatempty{margin:auto;text-align:center;color:var(--muted);max-width:420px}
+.chatempty b{display:block;color:var(--text);font-size:15px;margin-bottom:6px}
+.tab .busy{display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--prog);margin-left:6px;animation:bl 1.2s infinite}
 </style>
 </head>
 <body>
@@ -123,7 +149,8 @@ details.adv summary{padding:4px 10px 8px;font-size:12px;color:var(--muted);curso
     <h2><span class="tabs" id="tabs"></span><span class="spacer"></span><span id="agentStatus" class="pill"></span></h2>
     <div class="termwrap">
       <pre class="term" id="term"></pre>
-      <div id="startHint" class="starthint" hidden><p>Các agent của project này chưa chạy.</p><button id="btnStart2" class="primary">▶ Start agents</button><p class="hint">Muốn đổi agent hoặc model thì bấm "Chọn agent &amp; model" trước.</p></div>
+      <div class="chatlog" id="chatlog" hidden></div>
+      <div id="startHint" class="starthint" hidden><p>Các agent của project này chưa chạy.</p><button id="btnStart2" class="primary">▶ Start agents</button><p class="hint">Muốn đổi agent, model hoặc kiểu hiển thị (chat / terminal) thì bấm "Chọn agent &amp; model" trước.</p></div>
     </div>
     <div class="quick" id="quick" hidden></div>
     <div class="suggest" id="suggest"></div>
@@ -134,6 +161,7 @@ details.adv summary{padding:4px 10px 8px;font-size:12px;color:var(--muted);curso
     </div>
     <div class="chips" id="chips"></div>
     <details class="adv"><summary>Nâng cao</summary>
+      <div class="keys" id="chatKeys"><button class="small" id="btnTurnStop">⏹ Dừng lượt đang chạy</button><button class="small" id="btnReset">🆕 Cuộc trò chuyện mới với agent này</button><button class="small" id="btnRevoke" hidden>🔒 Thu hồi quyền đã cấp</button><span class="hint" id="grantList" style="align-self:center"></span></div>
       <div class="keys" id="keys"></div>
       <div class="row" style="padding:0 8px 8px"><label class="hint"><input type="checkbox" id="follow" checked> tự cuộn xuống cuối</label>
         <label class="hint"><input type="checkbox" id="showWatch"> hiện cửa sổ "watch" (nhật ký giao việc)</label></div>
@@ -182,6 +210,10 @@ details.adv summary{padding:4px 10px 8px;font-size:12px;color:var(--muted);curso
 <dialog id="dlgCfg">
   <div class="dlg-h"><h3>Chọn agent &amp; model <span class="hint" id="cfgProj"></span></h3><button id="cfgClose" class="small">Đóng</button></div>
   <div class="dlg-b">
+    <div class="box"><h4>Kiểu hiển thị</h4>
+      <span class="seg"><button id="vmChat">💬 Chat (dễ dùng)</button><button id="vmTerm">🖥 Terminal (như cũ)</button></span>
+      <p class="hint" style="margin:0" id="vmHint"></p>
+    </div>
     <div class="box"><h4>Lead (nói chuyện với bạn, chia và giao việc)</h4>
       <div class="arow head"><span>Agent</span><span>Model</span><span>Effort</span><span></span></div>
       <div id="cfgLead"></div>
@@ -344,14 +376,14 @@ function renderBanner(){
 function loadCfg(){
   try{
     const c=JSON.parse(localGet('cfg.'+proj)||localGet('cfg')||'null');
-    if(c&&Array.isArray(c.workers)){ if(!c.lead) c.lead={agent:'claude',model:c.leadModel||'',effort:''}; return c }
+    if(c&&Array.isArray(c.workers)){ if(!c.lead) c.lead={agent:'claude',model:c.leadModel||'',effort:''}; if(!c.mode) c.mode='chat'; return c }
   }catch{}
-  return {lead:{agent:'claude',model:'',effort:''}, workers:[{agent:'codex',model:'',effort:''}]};
+  return {mode:'chat', lead:{agent:'claude',model:'',effort:''}, workers:[{agent:'codex',model:'',effort:''}]};
 }
 let cfg = loadCfg();
 const winName = (w)=>{ const m=(w.model||'').replace(/[^A-Za-z0-9_-]/g,'-'); return !m ? w.agent : m.startsWith(w.agent) ? m : `${w.agent}-${m}` };
 const descr = (a)=> a.agent + ([a.model,a.effort].filter(Boolean).length ? ` (${[a.model,a.effort].filter(Boolean).join(', ')})` : '');
-function cfgSummaryText(){return 'lead: ' + descr(cfg.lead) + ' · workers: ' + cfg.workers.map(descr).join(', ')}
+function cfgSummaryText(){return (cfg.mode==='terminal'?'🖥 ':'💬 ') + 'lead: ' + descr(cfg.lead) + ' · workers: ' + cfg.workers.map(descr).join(', ')}
 
 function agentRow(a, i, removable){
   const cat = catalog[a.agent] || {models:[],efforts:[]};
@@ -370,9 +402,17 @@ function readRow(r){
 }
 function readCfgForm(){
   const workers=[...document.querySelectorAll('#cfgWorkers .arow')].map(readRow);
-  return {lead: readRow($('#cfgLead .arow')), workers: workers.length?workers:[{agent:'codex',model:'',effort:''}]};
+  return {mode: $('#vmTerm').classList.contains('sel')?'terminal':'chat', lead: readRow($('#cfgLead .arow')), workers: workers.length?workers:[{agent:'codex',model:'',effort:''}]};
 }
+function setViewMode(m){
+  $('#vmChat').classList.toggle('sel',m!=='terminal'); $('#vmTerm').classList.toggle('sel',m==='terminal');
+  $('#vmHint').textContent = m==='terminal'
+    ? 'Hiện đúng màn hình terminal của từng agent (tmux). Agent hỏi xác nhận thì bạn bấm nút chọn. Có đủ mọi lệnh, kể cả push.'
+    : 'Tin nhắn dạng chat như app Claude, xem được từng bước agent làm. Bắt đầu với quyền an toàn (sửa file trong project, chạy lệnh git và lệnh kiểm tra). Khi agent cần thêm quyền, tin nhắn hiện nút "Cho phép" để bạn bấm.';
+}
+$('#vmChat').onclick=()=>setViewMode('chat'); $('#vmTerm').onclick=()=>setViewMode('terminal');
 function renderCfg(){
+  setViewMode(cfg.mode);
   $('#cfgLead').innerHTML = agentRow(cfg.lead, 0, false);
   $('#cfgWorkers').innerHTML = cfg.workers.map((w,i)=>agentRow(w,i,true)).join('');
 }
@@ -392,11 +432,17 @@ $('#dlgCfg').addEventListener('change',e=>{
   if(e.target.classList.contains('md')){ const c=row.querySelector('.mdc'); c.hidden = e.target.value!=='__other'; if(!c.hidden) c.focus() }
 });
 $('#cfgSave').onclick = ()=>{if(saveCfg()){$('#dlgCfg').close(); toast('Đã lưu. Áp dụng ở lần Start tiếp theo.','ok')}};
-$('#cfgSaveStart').onclick = async()=>{if(saveCfg()){$('#dlgCfg').close(); if(state?.running){ if(!confirm('Phiên đang chạy. Dừng và Start lại với cấu hình mới?')) return; await api('POST','/api/stop').catch(()=>{}) } startAgents()}};
+$('#cfgSaveStart').onclick = async()=>{if(saveCfg()){$('#dlgCfg').close(); if(isRunning()){ if(!confirm('Phiên đang chạy. Dừng và Start lại với cấu hình mới?')) return; await api('POST','/api/stop').catch(()=>{}) } startAgents()}};
 
 // ---------------------------------------------------------------- bảng task & window
+const chatOn = ()=> !!state?.chat?.active;
+const isRunning = ()=> !!(state && (state.running || chatOn()));
+function tabList(){
+  if(chatOn()) return state.chat.agents.map(a=>({name:a.name, busy:a.busy}));
+  return state.running ? state.windows : [];
+}
 function workers(){
-  const fromSession = state && state.running ? state.windows.map(w=>w.name).filter(n=>!['lead','watch'].includes(n)) : [];
+  const fromSession = isRunning() ? tabList().map(w=>w.name).filter(n=>!['lead','watch'].includes(n)) : [];
   return [...new Set(fromSession.length ? fromSession : cfg.workers.map(winName))];
 }
 function fillWorkers(sel, pick){sel.innerHTML = workers().map(w=>`<option${w===pick?' selected':''}>${esc(w)}</option>`).join('')}
@@ -417,13 +463,14 @@ function winLabel(name){
   return '🛠 '+name;
 }
 function workerInfo(name){
+  const a = chatOn() && state.chat.agents.find(x=>x.name===name); if(a) return descr(a);
   const line=(state?.workersTxt||'').split('\n').find(l=>l.split(/\s+/)[0]===name); return line?line.trim():'';
 }
 function renderTabs(){
-  const all = state.running ? state.windows : [];
+  const all = tabList();
   const wins = all.filter(w=>w.name!=='watch' || $('#showWatch').checked || win==='watch');
   if(wins.length && !wins.some(w=>w.name===win)) win = wins[0].name;
-  $('#tabs').innerHTML = wins.map(w=>`<button class="tab small${w.name===win?' sel':''}" data-win="${esc(w.name)}" title="${esc(w.name==='lead'?'Lead: chia việc và nói chuyện với bạn':workerInfo(w.name)||w.name)}">${esc(winLabel(w.name))}</button>`).join('') || '<span class="hint">Agents</span>';
+  $('#tabs').innerHTML = wins.map(w=>`<button class="tab small${w.name===win?' sel':''}" data-win="${esc(w.name)}" title="${esc(w.name==='lead'?'Lead: chia việc và nói chuyện với bạn':workerInfo(w.name)||w.name)}">${esc(winLabel(w.name))}${w.busy?'<span class="busy" title="đang làm việc"></span>':''}</button>`).join('') || '<span class="hint">Agents</span>';
   renderSuggest();
 }
 $('#showWatch').onchange = ()=>{ if(state) renderTabs() };
@@ -469,8 +516,8 @@ async function refreshState(){
   const asked = proj;
   try{
     const s = await api('GET','/api/state'); if(asked!==proj) return; state = s;
-    $('#sdot').classList.toggle('on', state.running);
-    $('#stext').textContent = state.running ? `đang chạy · ${state.windows.length} window` : `chưa chạy`;
+    $('#sdot').classList.toggle('on', isRunning());
+    $('#stext').textContent = chatOn() ? `đang chạy (chat) · ${state.chat.agents.length} agent` : state.running ? `đang chạy (terminal) · ${state.windows.length} window` : `chưa chạy`;
     $('#stext').parentElement.title = state.project.path + ' · phiên tmux ' + state.session;
     renderBoard(); renderTabs(); notifyChanges(); renderBanner();
   }catch(e){$('#stext').textContent='mất kết nối tới server'; $('#sdot').classList.remove('on')}
@@ -506,8 +553,11 @@ function renderStatus(prompts){
 $('#quick').addEventListener('click',async e=>{const b=e.target.closest('[data-key]'); if(!b) return; try{await api('POST','/api/send',{win,key:b.dataset.key}); setTimeout(refreshPane,400)}catch(x){toast(x.message,'err')}});
 
 async function refreshPane(){
-  const running = !!state?.running;
+  const running = isRunning();
   $('#startHint').hidden = running || !state;
+  const cm = chatOn();
+  $('#term').hidden = cm; $('#chatlog').hidden = !cm; $('#keys').hidden = cm; $('#chatKeys').hidden = !cm;
+  if(cm) return refreshChat();
   if(!running){$('#term').textContent=''; $('#quick').hidden=true; renderStatus([]); return}
   try{
     const {text} = await api('GET','/api/pane/'+encodeURIComponent(win));
@@ -519,6 +569,85 @@ async function refreshPane(){
   }catch(e){$('#term').textContent=e.message}
 }
 $('#btnStart2').onclick = ()=>startAgents();
+
+// ---------------------------------------------------------------- chế độ chat
+function md(src){
+  const blocks = String(src||'').split(/```[^\n]*\n?/);
+  return blocks.map((b,i)=>{
+    if(i%2) return '<pre>'+esc(b.replace(/\n$/,''))+'</pre>';
+    const inline = (t)=>esc(t).replace(/`([^`]+)`/g,'<code>$1</code>').replace(/\*\*([^*]+)\*\*/g,'<b>$1</b>').replace(/(^|[^*])\*([^*\n]+)\*/g,'$1<i>$2</i>');
+    let html='', list=null;
+    const close=()=>{ if(list){html+=`</${list}>`; list=null} };
+    for(const para of b.split(/\n{2,}/)){
+      const lines = para.split('\n').filter(l=>l.trim());
+      if(!lines.length) continue;
+      for(const l of lines){
+        let m;
+        if((m=l.match(/^\s*[-*•]\s+(.*)/))){ if(list!=='ul'){close(); html+='<ul>'; list='ul'} html+='<li>'+inline(m[1])+'</li>'; continue }
+        if((m=l.match(/^\s*\d+[.)]\s+(.*)/))){ if(list!=='ol'){close(); html+='<ol>'; list='ol'} html+='<li>'+inline(m[1])+'</li>'; continue }
+        close();
+        if((m=l.match(/^#{1,6}\s+(.*)/))) html+='<h4>'+inline(m[1])+'</h4>';
+        else html+='<p>'+inline(l)+'</p>';
+      }
+      close();
+    }
+    return html;
+  }).join('');
+}
+function stepsHtml(m){
+  const st = m.steps||[]; if(!st.length) return '';
+  const denied = st.filter(s=>s.denied).length, errs = st.filter(s=>s.error&&!s.denied).length;
+  const label = m.running ? `Đang làm… (${st.length} bước)` : `${st.length} bước đã làm` + (errs?` · ${errs} lỗi`:'') + (denied?` · ${denied} bị chặn`:'');
+  return `<details class="steps"${m.running?' open':''}><summary>${esc(label)}</summary><ol>${st.slice(-80).map(s=>`<li class="${s.error?'err':''}"><span>${esc(s.icon||'•')}</span><span>${esc(s.title||'')}${s.denied?' — bị chặn, cần bạn cho phép':''}</span>${s.detail?`<pre>${esc(s.detail)}</pre>`:''}</li>`).join('')}</ol></details>`;
+}
+function msgHtml(m){
+  const time = new Date(m.ts).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'});
+  if(m.role==='you') return `<div class="msg you" title="${esc(time)}">${esc(m.text)}</div>`;
+  if(m.role==='system') return `<div class="msg system">${esc(m.text)} · ${esc(time)}</div>`;
+  const who = (win==='lead'?'👑 Lead':'🛠 '+win) + (m.agent?' · '+m.agent:'') + ' · ' + time;
+  return `<div class="msg agent"><div class="who">${esc(who)}</div>${stepsHtml(m)}${m.text?md(m.text):''}${m.running&&!m.text?'<span class="typing"><i></i><i></i><i></i></span>':''}${m.error?`<div class="errbox">⚠️ ${esc(m.error)}</div>`:''}${grantHtml(m)}${m.note?`<div class="hint">${esc(m.note)}</div>`:''}</div>`;
+}
+function grantHtml(m){
+  if(!m.grants?.length || m.running) return '';
+  const have = (state?.chat?.agents.find(a=>a.name===win)?.grants)||[];
+  if(m.granted || m.grants.every(g=>have.includes(g.id))) return `<div class="hint">✅ Đã cho phép: ${esc(m.grants.map(g=>g.label).join('; '))}</div>`;
+  return `<div class="grant"><b>🔐 Agent cần thêm quyền để làm tiếp:</b><ul>${m.grants.map(g=>`<li>${esc(g.label)}</li>`).join('')}</ul>
+    <div class="row"><button class="small primary" data-grant="${esc(m.id)}">Cho phép &amp; làm tiếp</button><span class="hint">Quyền được lưu cho agent này; thu hồi ở mục Nâng cao.</span></div></div>`;
+}
+$('#chatlog').addEventListener('click',async e=>{
+  const b=e.target.closest('[data-grant]'); if(!b) return;
+  b.disabled=true;
+  try{await api('POST',`/api/chat/${encodeURIComponent(win)}/grant`,{msgId:b.dataset.grant}); chatSig=''; refreshChat()}catch(x){toast(x.message,'err'); b.disabled=false}
+});
+let chatSig = '';
+async function refreshChat(){
+  const asked = win+'|'+proj;
+  try{
+    const j = await api('GET','/api/chat/'+encodeURIComponent(win)); if(asked!==win+'|'+proj) return;
+    const box = $('#chatlog'); const atBottom = box.scrollTop + box.clientHeight >= box.scrollHeight - 40;
+    const sig = asked + JSON.stringify(j.messages.slice(-3)) + j.messages.length;
+    if(sig!==chatSig){
+      const firstPaint = !chatSig.startsWith(asked);
+      chatSig = sig;
+      const open = new Set([...box.querySelectorAll('details.steps[open]')].map(d=>d.closest('[data-id]')?.dataset.id));
+      box.innerHTML = j.messages.length ? j.messages.map(m=>`<div data-id="${esc(m.id)}" style="display:contents">${msgHtml(m)}</div>`).join('')
+        : `<div class="chatempty"><b>${win==='lead'?'Chào bạn 👋':'Worker '+esc(win)}</b>${win==='lead'?'Hãy nhắn cho Lead bạn muốn làm gì. Lead sẽ chia việc thành task nhỏ, giao cho worker và báo lại kết quả ở đây.':'Worker nhận việc từ Lead. Khi có task, các bước làm sẽ hiện ở đây. Bạn cũng có thể nhắn trực tiếp.'}</div>`;
+      for(const id of open){ const d = box.querySelector(`[data-id="${CSS.escape(id)}"] details.steps`); if(d) d.open = true }
+      if($('#follow').checked && (atBottom || firstPaint)) box.scrollTop = box.scrollHeight;
+    }
+    const st=$('#agentStatus'); st.hidden=false; st.className='pill'+(j.busy?' busy':'');
+    st.innerHTML = j.busy ? `<span class="dot"></span>Đang làm việc…${j.queued?` (+${j.queued} tin chờ)`:''}` : '<span class="dot on"></span>Sẵn sàng';
+    $('#quick').hidden=true; $('#btnTurnStop').disabled = !j.busy;
+    const g = (state?.chat?.agents.find(a=>a.name===win)?.grants)||[];
+    $('#btnRevoke').hidden = !g.length; $('#grantList').textContent = g.length ? 'Quyền đã cấp thêm: '+g.join(', ') : '';
+  }catch(e){ $('#chatlog').innerHTML = `<div class="chatempty">${esc(e.message)}</div>`; chatSig='' }
+}
+$('#btnRevoke').onclick = async()=>{ if(!confirm('Thu hồi mọi quyền đã cấp thêm cho agent này?')) return; try{await api('POST',`/api/chat/${encodeURIComponent(win)}/revoke`); await refreshState(); chatSig=''; refreshChat()}catch(e){toast(e.message,'err')} };
+$('#btnTurnStop').onclick = async()=>{try{await api('POST',`/api/chat/${encodeURIComponent(win)}/stop`); toast('Đã dừng','ok'); refreshChat()}catch(e){toast(e.message,'err')}};
+$('#btnReset').onclick = async()=>{
+  if(!confirm(`Bắt đầu cuộc trò chuyện mới với ${win==='lead'?'Lead':win}? Agent sẽ quên nội dung đã nói (task và code không bị ảnh hưởng).`)) return;
+  try{await api('POST',`/api/chat/${encodeURIComponent(win)}/reset`); chatSig=''; refreshChat()}catch(e){toast(e.message,'err')}
+};
 
 // ---------------------------------------------------------------- cập nhật
 $('#btnUpdate').onclick = async()=>{
@@ -567,10 +696,14 @@ for(const [id,listFn] of [['#msg',()=>attachments],['#lText',()=>leadAttachments
 }
 
 // ---------------------------------------------------------------- gửi tin
-async function sendTo(target, text){ await api('POST','/api/send',{win:target,text}); }
+async function sendTo(target, text){
+  if(chatOn()) await api('POST',`/api/chat/${encodeURIComponent(target)}/send`,{text});
+  else await api('POST','/api/send',{win:target,text});
+}
 async function sendMsg(){
   const text = $('#msg').value; if(!text.trim() && !attachments.length) return;
-  try{await sendTo(win, withAttachments(text.trim(), attachments)); $('#msg').value=''; attachments=[]; renderChips(); setTimeout(refreshPane,600)}catch(e){toast(e.message,'err')}
+  if(!isRunning()){toast('Bấm Start agents trước đã.','err'); return}
+  try{await sendTo(win, withAttachments(text.trim(), attachments)); $('#msg').value=''; attachments=[]; renderChips(); setTimeout(refreshPane,300)}catch(e){toast(e.message,'err')}
 }
 
 async function openTask(id){
@@ -584,12 +717,15 @@ async function openTask(id){
 
 async function startAgents(){
   $('#btnStart').disabled=true;
-  try{const r=await api('POST','/api/start',{lead:cfg.lead, workers:cfg.workers}); toast(r.out||'Đã start','ok')}catch(e){toast(e.message,'err')}
+  try{
+    if(cfg.mode==='terminal'){ const r=await api('POST','/api/start',{lead:cfg.lead, workers:cfg.workers}); toast(r.out||'Đã start','ok') }
+    else { await api('POST','/api/chatmode/start',{lead:cfg.lead, workers:cfg.workers}); win='lead'; localSet('win.'+proj,win); chatSig=''; toast('Đã sẵn sàng. Nhắn cho Lead ở khung chat nhé.','ok') }
+  }catch(e){toast(e.message,'err')}
   $('#btnStart').disabled=false; await refreshState(); loadProjects().catch(()=>{});
 }
 
 $('#board').addEventListener('click',e=>{const c=e.target.closest('.card'); if(c) openTask(c.dataset.id)});
-$('#tabs').addEventListener('click',e=>{const b=e.target.closest('[data-win]'); if(!b) return; win=b.dataset.win; localSet('win.'+proj,win); delete $('#term').dataset.seen; renderTabs(); refreshPane()});
+$('#tabs').addEventListener('click',e=>{const b=e.target.closest('[data-win]'); if(!b) return; win=b.dataset.win; chatSig=''; localSet('win.'+proj,win); delete $('#term').dataset.seen; renderTabs(); refreshPane()});
 $('#keys').innerHTML = KEYS.map(([k,l])=>`<button class="small" data-key="${k}">${l}</button>`).join('') + '<span class="hint" style="align-self:center">gửi phím vào window đang chọn</span>';
 $('#keys').addEventListener('click',async e=>{const b=e.target.closest('[data-key]'); if(!b) return; try{await api('POST','/api/send',{win,key:b.dataset.key}); setTimeout(refreshPane,300)}catch(x){toast(x.message,'err')}});
 $('#btnSend').onclick = sendMsg;
@@ -614,7 +750,7 @@ $('#btnNew').onclick = ()=>{fillWorkers($('#nOwner'), workers()[0]); setMode(loc
 $('#dnClose').onclick = ()=>$('#dlgNew').close();
 $('#lSend').onclick = async()=>{
   const text=$('#lText').value.trim(); if(!text){toast('Hãy mô tả việc cần làm','err'); return}
-  if(!state?.running){toast('Phiên chưa chạy. Bấm "Start agents" trước.','err'); return}
+  if(!isRunning()){toast('Phiên chưa chạy. Bấm "Start agents" trước.','err'); return}
   try{
     await sendTo('lead', withAttachments(text, leadAttachments));
     $('#lText').value=''; leadAttachments=[]; renderChips(); $('#dlgNew').close();
@@ -623,7 +759,7 @@ $('#lSend').onclick = async()=>{
 };
 $('#dnCreate').onclick = async()=>{
   const wantAssign = $('#nAssign').checked;
-  const body={title:$('#nTitle').value,goal:$('#nGoal').value,files:$('#nFiles').value||'(not specified: decide yourself, keep changes minimal)',context:$('#nContext').value,done:$('#nDone').value||'(no command given: verify the change yourself)',owner:$('#nOwner').value,assign:wantAssign && !!state?.running};
+  const body={title:$('#nTitle').value,goal:$('#nGoal').value,files:$('#nFiles').value||'(not specified: decide yourself, keep changes minimal)',context:$('#nContext').value,done:$('#nDone').value||'(no command given: verify the change yourself)',owner:$('#nOwner').value,assign:wantAssign && isRunning()};
   try{
     const r = await api('POST','/api/task',body);
     toast(`Đã tạo ${r.id}` + (r.assigned ? `\n${r.assigned.out}` : (wantAssign?'\n(chưa giao vì phiên chưa chạy)':'')), r.assigned && !r.assigned.ok ? 'err':'ok');
