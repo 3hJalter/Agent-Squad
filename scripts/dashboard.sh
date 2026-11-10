@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Mở web dashboard: scripts/dashboard.sh   rồi vào http://localhost:7070 (trình duyệt Windows cũng được).
-# Server thoát với mã 75 sau khi tự cập nhật (nút "Cập nhật"): script chạy lại nó.
+# Server thoát với mã 75 khi bấm "Cập nhật" hoặc "Khởi động lại": script chạy lại nó.
 set -uo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 if ! command -v node >/dev/null 2>&1; then
@@ -12,5 +12,5 @@ command -v node >/dev/null 2>&1 || { echo "Không tìm thấy node. Chạy lại
 while true; do
   node "$ROOT/dashboard/server.js"; code=$?
   [ "$code" = 75 ] || exit "$code"
-  echo "Đã cập nhật, khởi động lại dashboard..."
+  echo "Khởi động lại dashboard..."
 done

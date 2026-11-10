@@ -354,7 +354,7 @@ module.exports = function setupChat({ on, send, readBody, getCtx, loadProjects, 
       seen.set(ctx.root, last);
     }
   }
-  setInterval(() => dispatch().catch((e) => console.error('chat dispatch:', e.message)), 3000);
+  if (!process.env.SQUAD_SELFTEST) setInterval(() => dispatch().catch((e) => console.error('chat dispatch:', e.message)), 3000);
 
   // ------------------------------------------------------------ API
   on('GET', /^\/api\/chat\/([^/]+)$/, (req, res, m, url) => {
@@ -421,5 +421,13 @@ module.exports = function setupChat({ on, send, readBody, getCtx, loadProjects, 
     send(res, 200, { ok: true });
   });
 
-  return { start, stopAll, info, isActive: (ctx) => !!loadState(ctx).active };
+  // trước khi dashboard khởi động lại: dừng các lượt đang chạy (lịch sử và trạng thái chat giữ nguyên)
+  function killAll() {
+    let n = 0;
+    for (const L of live.values()) { L.queue = []; if (L.child) { L.stopped = true; L.child.kill('SIGTERM'); n++; } }
+    return n;
+  }
+  const busyCount = () => [...live.values()].filter((L) => L.child).length;
+
+  return { start, stopAll, info, killAll, busyCount, isActive: (ctx) => !!loadState(ctx).active };
 };

@@ -136,7 +136,8 @@ details.adv summary{padding:4px 10px 8px;font-size:12px;color:var(--muted);curso
   <button id="btnCfg">Chọn agent &amp; model</button>
   <button id="btnStart" class="primary">Start agents</button>
   <button id="btnStop" class="danger">Stop</button>
-  <button id="btnUpdate" class="small" title="Tải bản Agent-Squad mới nhất và khởi động lại dashboard">⟳ Cập nhật</button>
+  <button id="btnUpdate" class="small" title="Tải bản Agent-Squad mới nhất từ GitHub và khởi động lại dashboard">⟳ Cập nhật</button>
+  <button id="btnRestart" class="small" title="Khởi động lại dashboard để dùng code mới trên máy (ví dụ sau khi gộp bản nâng cấp Agent-Squad)">↻ Khởi động lại</button>
 </header>
 <div id="banner" class="banner" hidden></div>
 
@@ -666,17 +667,34 @@ $('#btnReset').onclick = async()=>{
 
 // ---------------------------------------------------------------- cập nhật
 $('#btnUpdate').onclick = async()=>{
-  if(!confirm('Tải bản Agent-Squad mới nhất? Dashboard sẽ tự khởi động lại; các agent đang chạy không bị ảnh hưởng.')) return;
+  if(!confirm('Tải bản Agent-Squad mới nhất? Dashboard sẽ tự khởi động lại (agent kiểu terminal không bị ảnh hưởng; lượt chat đang chạy sẽ dừng).')) return;
   $('#btnUpdate').disabled=true;
   try{
     const r = await fetch('/api/update',{method:'POST',headers:{'X-Squad':'1'}}); const j = await r.json();
     if(!r.ok) throw new Error(j.out||j.error);
     if(!j.changed){toast('Đã là bản mới nhất.','ok'); $('#btnUpdate').disabled=false; return}
-    toast('Đã cập nhật. Đang khởi động lại…','ok');
-    for(let i=0;i<30;i++){ await new Promise(r=>setTimeout(r,1000)); try{ const x=await fetch('/api/projects'); if(x.ok){ location.reload(); return } }catch{} }
-    toast('Dashboard chưa chạy lại. Mở lại Agent-Squad.bat nhé.','err');
+    toast('Đã cập nhật. Đang khởi động lại…','ok'); await waitBack(); return;
   }catch(e){toast('Không cập nhật được: '+e.message,'err')}
   $('#btnUpdate').disabled=false;
+};
+
+async function waitBack(){
+  for(let i=0;i<30;i++){ await new Promise(r=>setTimeout(r,1000)); try{ const x=await fetch('/api/projects'); if(x.ok){ location.reload(); return } }catch{} }
+  toast('Dashboard chưa chạy lại. Mở lại Agent-Squad.bat nhé.','err');
+}
+$('#btnRestart').onclick = async()=>{
+  if(!confirm('Khởi động lại dashboard để dùng code mới trên máy? Lịch sử chat và task được giữ nguyên.')) return;
+  $('#btnRestart').disabled=true;
+  try{
+    let r = await fetch('/api/restart',{method:'POST',headers:{'X-Squad':'1','Content-Type':'application/json'},body:'{}'}); let j = await r.json();
+    if(r.status===409 && j.code==='busy'){
+      if(!confirm(j.error+' Vẫn khởi động lại?')){ $('#btnRestart').disabled=false; return }
+      r = await fetch('/api/restart',{method:'POST',headers:{'X-Squad':'1','Content-Type':'application/json'},body:'{"force":true}'}); j = await r.json();
+    }
+    if(!r.ok) throw new Error(j.error);
+    toast('Đang khởi động lại…','ok'); await waitBack();
+  }catch(e){toast(e.message,'err')}
+  $('#btnRestart').disabled=false;
 };
 
 // ---------------------------------------------------------------- đính kèm file
