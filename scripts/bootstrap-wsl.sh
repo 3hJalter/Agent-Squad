@@ -12,8 +12,10 @@ nvm install --lts
 # để các file .bat tìm thấy lệnh codex.
 grep -q 'NVM_DIR/nvm.sh' "$HOME/.profile" 2>/dev/null || \
   printf '\nexport NVM_DIR="$HOME/.nvm"\n[ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh"\n' >> "$HOME/.profile"
-command -v codex >/dev/null || npm i -g @openai/codex
-command -v claude >/dev/null || curl -fsSL https://claude.ai/install.sh | bash
+# WSL nối thêm PATH của Windows: bỏ qua bản codex/claude cài trên Windows (/mnt/c/...).
+has_linux() { command -v "$1" 2>/dev/null | grep -qv '^/mnt/'; }
+has_linux codex || npm i -g @openai/codex
+has_linux claude || curl -fsSL https://claude.ai/install.sh | bash
 [ -d "$HOME/Agent-Squad" ] || git clone https://github.com/3hJalter/Agent-Squad "$HOME/Agent-Squad"
 cd "$HOME/Agent-Squad" && bash scripts/setup-agents.sh >/dev/null
 echo
