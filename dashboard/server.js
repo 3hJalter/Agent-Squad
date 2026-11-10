@@ -130,10 +130,25 @@ function listTasks(ctx) {
       title: first.replace(/^#\s*T-\d+\s*:?\s*/, '').trim(),
       status: field(text, 'Status').toLowerCase() || 'todo',
       owner: field(text, 'Owner'),
+      category: field(text, 'Category'),
+      createdBy: field(text, 'Created by'),
+      parent: field(text, 'Parent'),
       result: section(text, 'Result'),
       mtime: fs.statSync(p).mtimeMs,
     };
   }).sort((a, b) => Number(b.id.slice(2)) - Number(a.id.slice(2)));
+}
+
+// .agents/hierarchy.txt: "<name> <- <parent>" mỗi dòng; không có file = phẳng (mọi người dưới lead)
+function readHierarchy(ctx) {
+  const out = {};
+  let text = '';
+  try { text = fs.readFileSync(path.join(ctx.root, '.agents', 'hierarchy.txt'), 'utf8'); } catch { return out; }
+  for (const line of text.split(/\r?\n/)) {
+    const m = line.replace(/#.*/, '').match(/^\s*(\S+)\s*<-\s*(\S+)\s*$/);
+    if (m && m[1] !== 'lead') out[m[1]] = m[2];
+  }
+  return out;
 }
 
 function nextId(ctx) {
@@ -433,7 +448,7 @@ on('GET', /^\/api\/state$/, async (req, res, _m, url) => {
   try { workersTxt = fs.readFileSync(path.join(ctx.root, '.agents', 'workers.txt'), 'utf8'); } catch { /* chưa start */ }
   send(res, 200, {
     project: { id: ctx.id, name: ctx.name, path: ctx.root }, session: ctx.session,
-    ...(await sessionInfo(ctx)), chat: chat.info(ctx), tasks: listTasks(ctx), workersTxt, ...(await scaffoldState(ctx.root)),
+    ...(await sessionInfo(ctx)), chat: chat.info(ctx), tasks: listTasks(ctx), workersTxt, hierarchy: readHierarchy(ctx), ...(await scaffoldState(ctx.root)),
   });
 });
 

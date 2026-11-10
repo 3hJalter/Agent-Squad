@@ -37,6 +37,11 @@ section>h2{font-size:14px;margin:0;padding:10px 12px;border-bottom:1px solid var
 .card .id{font-size:11px;color:var(--muted)}
 .card .t{font-weight:600;word-break:break-word}
 .card .o{font-size:12px;color:var(--muted)}
+.cat{margin-bottom:6px}
+.cat>summary{font-size:12px;color:var(--muted);cursor:pointer;margin-bottom:5px;list-style:none;user-select:none}
+.cat>summary::before{content:'▾ '}
+.cat:not([open])>summary::before{content:'▸ '}
+#catSel{font-size:12px;padding:2px 4px}
 .s-in-progress,.s-ready{border-left-color:var(--prog)}.s-blocked{border-left-color:var(--blocked)}.s-done{border-left-color:var(--done)}
 .empty{color:var(--muted);font-size:12px}
 .tabs{display:flex;gap:4px;flex-wrap:wrap}
@@ -143,7 +148,7 @@ details.adv summary{padding:4px 10px 8px;font-size:12px;color:var(--muted);curso
 
 <main>
   <section>
-    <h2>Tasks <span class="spacer"></span><button id="btnCleanup" class="small" hidden title="Chuyển các task đã xong vào thư mục lưu trữ">🧹 Dọn task đã xong</button><button id="btnNew" class="primary small">+ Việc mới</button></h2>
+    <h2>Tasks <select id="catSel" hidden title="Lọc theo nhóm (Category)"></select><span class="spacer"></span><button id="btnCleanup" class="small" hidden title="Chuyển các task đã xong vào thư mục lưu trữ">🧹 Dọn task đã xong</button><button id="btnNew" class="primary small">+ Việc mới</button></h2>
     <div class="board" id="board"></div>
   </section>
 
@@ -464,13 +469,37 @@ function workers(){
 }
 function fillWorkers(sel, pick){sel.innerHTML = workers().map(w=>`<option${w===pick?' selected':''}>${esc(w)}</option>`).join('')}
 
+const NOCAT = '(chưa phân nhóm)';
+const catOf = (t)=> t.category || NOCAT;
+function renderCatSel(){
+  const cats = [...new Set(state.tasks.map(t=>t.category).filter(Boolean))].sort();
+  const sel = $('#catSel'), cur = localGet('cat.'+proj) || '';
+  sel.hidden = !cats.length;
+  const opts = cats.length && state.tasks.some(t=>!t.category) ? [...cats, NOCAT] : cats;
+  const pick = opts.includes(cur) ? cur : '';
+  sel.innerHTML = `<option value="">Tất cả nhóm</option>` + opts.map(c=>`<option value="${esc(c)}"${c===pick?' selected':''}>${esc(c)}</option>`).join('');
+  return pick;
+}
+$('#catSel').onchange = (e)=>{ localSet('cat.'+proj, e.target.value); if(state) renderBoard() };
+function cardHtml(t, k){
+  const extra = [t.parent && t.parent.toLowerCase()!=='none' ? '↳ '+t.parent : '', t.createdBy && t.createdBy!=='lead' ? 'giao bởi '+t.createdBy : ''].filter(Boolean).join(' · ');
+  return `<div class="card s-${esc(t.status)}" data-id="${esc(t.id)}"><div class="id">${esc(t.id)}${extra?' · '+esc(extra):''}</div><div class="t">${esc(t.title||'(không tên)')}</div><div class="o">${esc(t.owner)}${t.status!==k?' · '+esc(t.status):''}</div></div>`;
+}
+function colHtml(list, k){
+  if(!list.length) return '<div class="empty">—</div>';
+  if(!list.some(t=>t.category)) return list.map(t=>cardHtml(t,k)).join('');
+  const groups = new Map();
+  for(const t of list){ const c = catOf(t); if(!groups.has(c)) groups.set(c, []); groups.get(c).push(t) }
+  return [...groups].map(([c,ts])=>`<details class="cat" data-cat="${esc(c)}" data-col="${esc(k)}"${localGet('fold.'+proj+'.'+k+'.'+c)?'':' open'}><summary>${esc(c)} (${ts.length})</summary>${ts.map(t=>cardHtml(t,k)).join('')}</details>`).join('');
+}
 function renderBoard(){
   const by = Object.fromEntries(COLS.map(([k])=>[k,[]]));
-  for(const t of state.tasks){(by[t.status] || by['todo']).push(t)}
+  const cat = renderCatSel();
+  for(const t of state.tasks){ if(cat && catOf(t)!==cat) continue; (by[t.status] || by['todo']).push(t)}
   const cols = COLS.filter(([k])=>k!=='ready' || by.ready.length);
   $('#board').style.gridTemplateColumns = `repeat(${cols.length},minmax(0,1fr))`;
   $('#board').innerHTML = cols.map(([k,label])=>`<div class="col"><h3>${label} <span>${by[k].length}</span></h3>${
-    by[k].map(t=>`<div class="card s-${esc(t.status)}" data-id="${esc(t.id)}"><div class="id">${esc(t.id)}</div><div class="t">${esc(t.title||'(không tên)')}</div><div class="o">${esc(t.owner)}${t.status!==k?' · '+esc(t.status):''}</div></div>`).join('') || '<div class="empty">—</div>'
+    colHtml(by[k], k)
   }</div>`).join('');
 }
 
@@ -483,11 +512,23 @@ function workerInfo(name){
   const a = chatOn() && state.chat.agents.find(x=>x.name===name); if(a) return descr(a);
   const line=(state?.workersTxt||'').split('\n').find(l=>l.split(/\s+/)[0]===name); return line?line.trim():'';
 }
+// Sắp agent theo cây trong .agents/hierarchy.txt (DFS từ lead); không có file = giữ nguyên thứ tự
+function treeOrder(list){
+  const h = state?.hierarchy || {};
+  if(!Object.keys(h).length) return list.map(w=>({...w, depth:0}));
+  const names = new Set(list.map(w=>w.name)), out = [], seen = new Set();
+  const parentOf = (n)=> h[n] && names.has(h[n]) ? h[n] : 'lead';
+  const walk = (n, d)=>{ for(const w of list){ if(seen.has(w.name) || w.name==='watch' || w.name==='lead' || parentOf(w.name)!==n) continue; seen.add(w.name); out.push({...w, depth:d}); walk(w.name, d+1) } };
+  for(const w of list) if(w.name==='lead'){ seen.add('lead'); out.push({...w, depth:0}) }
+  walk('lead', names.has('lead') ? 1 : 0);
+  for(const w of list) if(!seen.has(w.name)){ seen.add(w.name); out.push({...w, depth:0}) } // watch, vòng lặp
+  return out;
+}
 function renderTabs(){
-  const all = tabList();
+  const all = treeOrder(tabList());
   const wins = all.filter(w=>w.name!=='watch' || $('#showWatch').checked || win==='watch');
   if(wins.length && !wins.some(w=>w.name===win)) win = wins[0].name;
-  $('#tabs').innerHTML = wins.map(w=>`<button class="tab small${w.name===win?' sel':''}" data-win="${esc(w.name)}" title="${esc(w.name==='lead'?'Lead: chia việc và nói chuyện với bạn':workerInfo(w.name)||w.name)}">${esc(winLabel(w.name))}${w.busy?'<span class="busy" title="đang làm việc"></span>':''}</button>`).join('') || '<span class="hint">Agents</span>';
+  $('#tabs').innerHTML = wins.map(w=>`<button class="tab small${w.name===win?' sel':''}" data-win="${esc(w.name)}" title="${esc(w.name==='lead'?'Lead: chia việc và nói chuyện với bạn':(workerInfo(w.name)||w.name)+(state?.hierarchy?.[w.name]?' · báo cáo cho '+state.hierarchy[w.name]:''))}">${w.depth>1?'<span class="hint">'+'·'.repeat(w.depth-1)+'</span>':''}${w.depth?'└ ':''}${esc(winLabel(w.name))}${w.busy?'<span class="busy" title="đang làm việc"></span>':''}</button>`).join('') || '<span class="hint">Agents</span>';
   renderSuggest();
 }
 $('#showWatch').onchange = ()=>{ if(state) renderTabs() };
@@ -767,6 +808,7 @@ async function startAgents(){
   $('#btnStart').disabled=false; await refreshState(); loadProjects().catch(()=>{});
 }
 
+$('#board').addEventListener('toggle',e=>{const d=e.target; if(d.classList?.contains('cat')) localSet('fold.'+proj+'.'+d.dataset.col+'.'+d.dataset.cat, d.open?'':'1')}, true);
 $('#board').addEventListener('click',e=>{const c=e.target.closest('.card'); if(c) openTask(c.dataset.id)});
 $('#tabs').addEventListener('click',e=>{const b=e.target.closest('[data-win]'); if(!b) return; win=b.dataset.win; chatSig=''; localSet('win.'+proj,win); delete $('#term').dataset.seen; renderTabs(); refreshPane()});
 $('#keys').innerHTML = KEYS.map(([k,l])=>`<button class="small" data-key="${k}">${l}</button>`).join('') + '<span class="hint" style="align-self:center">gửi phím vào window đang chọn</span>';
