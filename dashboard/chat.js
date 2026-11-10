@@ -309,7 +309,7 @@ module.exports = function setupChat({ on, send, readBody, getCtx, loadProjects, 
     const gitDir = common.ok ? common.out.trim() : path.join(ctx.root, '.git');
     const st = loadState(ctx);
     const old = st.agents || {};
-    st.agents = { lead: { ...lead, cwd: ctx.root, gitDir } };
+    st.agents = { lead: { ...lead, cwd: ctx.root } };
     const lines = [];
     const repoName = path.basename(ctx.root);
     for (const w of workers) {
