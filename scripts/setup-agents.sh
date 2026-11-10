@@ -16,7 +16,9 @@ mkdir -p .agents/tasks .agents/handoff scripts
 
 # .agents/ chứa trạng thái làm việc, không commit (các worktree sẽ symlink tới đây)
 touch .gitignore
-rg -qx '\.agents/' .gitignore 2>/dev/null || grep -qx '\.agents/' .gitignore || echo '.agents/' >> .gitignore
+# Không có dấu "/" cuối: trong worktree .agents là symlink, ".agents/" sẽ không khớp.
+sed -i '/^\.agents\/$/d' .gitignore
+grep -qx '\.agents' .gitignore || echo '.agents' >> .gitignore
 
 # ---------------------------------------------------------------- AGENTS.md
 put AGENTS.md <<'EOF'
@@ -33,10 +35,11 @@ put AGENTS.md <<'EOF'
 1. Tasks live in .agents/tasks/<ID>.md (copy of _template.md). One owner per task.
 2. Workers read ONLY the task file and the files in its scope. Do not explore the whole repo.
 3. Edit only the files listed under "Files you may edit". If you need others: stop, write the
-   question under "Notes / questions", set Status: blocked, run scripts/notify.sh <ID>.
-4. When finished: run the checks listed in the task, fill "Result" (max 5 lines: what changed,
-   files, check outcome), set Status: done, commit on your branch, then run
-   scripts/notify.sh <ID>.
+   question under "Notes / questions", then set Status: blocked.
+4. When finished: run the checks listed in the task, commit on your branch, fill "Result"
+   (max 5 lines: what changed, files, check outcome), then set Status: done as the LAST step.
+   scripts/watch-tasks.sh notifies the lead automatically when Status becomes done or blocked;
+   you do not need to run any notify command.
 5. DIRECT INSTRUCTIONS FROM THE HUMAN: if the human talks to you directly and changes anything,
    first append one line to "Changes by human" in the task file (date, change, reason), then
    proceed. The lead must never be unaware of a change.
@@ -97,7 +100,8 @@ EOF
 # ---------------------------------------------------------------- scripts
 put scripts/start-agents.sh <<'EOF'
 #!/usr/bin/env bash
-# Dựng phiên tmux: window "lead" (claude) + mỗi worker một window, mỗi worker một git worktree.
+# Dựng phiên tmux: window "lead" (claude) + mỗi worker một window, mỗi worker một git worktree,
+# và window "watch" chạy scripts/watch-tasks.sh để báo lead khi task xong/bị chặn.
 # Dùng:  scripts/start-agents.sh            (chỉ codex)
 #        WORKERS="codex gemini" scripts/start-agents.sh
 set -euo pipefail
@@ -111,6 +115,7 @@ if tmux has-session -t "$SESSION" 2>/dev/null; then
 fi
 cd "$ROOT"
 git rev-parse HEAD >/dev/null 2>&1 || { echo "Repo chưa có commit nào. Hãy commit trước."; exit 1; }
+mkdir -p "$ROOT/.agents/tasks"
 
 tmux new-session -d -s "$SESSION" -n lead -c "$ROOT" "claude; exec bash"
 for w in $WORKERS; do
@@ -118,9 +123,16 @@ for w in $WORKERS; do
   if [ ! -d "$WT" ]; then
     git worktree add "$WT" -b "agent/$w" 2>/dev/null || git worktree add "$WT" "agent/$w"
   fi
-  ln -sfn "$ROOT/.agents" "$WT/.agents"   # dùng chung thư mục task với lead
-  tmux new-window -t "$SESSION" -n "$w" -c "$WT" "$w; exec bash"
+  # dùng chung thư mục task với lead (không ghi đè nếu .agents trong worktree là thư mục thật)
+  [ -d "$WT/.agents" ] && [ ! -L "$WT/.agents" ] || ln -sfn "$ROOT/.agents" "$WT/.agents"
+  case "$w" in
+    # .agents là symlink ra ngoài worktree: cho Codex quyền ghi vào đó trong sandbox
+    codex) CMD="codex --add-dir '$ROOT/.agents'" ;;
+    *)     CMD="$w" ;;
+  esac
+  tmux new-window -t "$SESSION" -n "$w" -c "$WT" "$CMD; exec bash"
 done
+tmux new-window -d -t "$SESSION" -n watch -c "$ROOT" "SESSION='$SESSION' scripts/watch-tasks.sh; exec bash"
 tmux select-window -t "$SESSION:lead"
 echo "Xong. Vào bằng: tmux attach -t $SESSION   (Ctrl-b n/p: đổi window, Ctrl-b d: thoát ra)"
 EOF
@@ -143,12 +155,43 @@ EOF
 
 put scripts/notify.sh <<'EOF'
 #!/usr/bin/env bash
-# Worker gọi khi xong/bị chặn: scripts/notify.sh T-001
+# Báo lead về một task: scripts/notify.sh T-001 (watch-tasks.sh tự gọi; cũng gọi tay được)
 set -euo pipefail
 ID="${1:?task id}"; SESSION="${SESSION:-agents}"
 tmux send-keys -t "$SESSION:lead" -l "Worker updated $ID. Read only its Status and Result in .agents/tasks/$ID.md, then report to me in 3 lines max."
 sleep 0.4
 tmux send-keys -t "$SESSION:lead" Enter
+EOF
+
+put scripts/watch-tasks.sh <<'EOF'
+#!/usr/bin/env bash
+# Chạy nền trong window "watch" (start-agents.sh tự bật). Không tốn token:
+# mỗi vài giây đọc dòng "Status:" của .agents/tasks/T-*.md; khi một task chuyển sang
+# done hoặc blocked thì gõ thông báo vào window lead (thay cho việc worker tự gọi tmux,
+# vì sandbox của worker có thể chặn tmux).
+set -uo pipefail
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+DIR="$ROOT/.agents/tasks"; SESSION="${SESSION:-agents}"; INTERVAL="${INTERVAL:-5}"
+declare -A last
+
+status_of() { sed -n 's/^Status:[[:space:]]*//p' "$1" | head -n1 | tr -d '\r[:space:]'; }
+
+scan() { # scan <notify 0|1>
+  local f id st
+  for f in "$DIR"/T-*.md; do
+    [ -f "$f" ] || continue
+    id="$(basename "$f" .md)"; st="$(status_of "$f")"
+    if [ "$1" = 1 ] && [ "${last[$id]:-}" != "$st" ] && { [ "$st" = done ] || [ "$st" = blocked ]; }; then
+      SESSION="$SESSION" "$ROOT/scripts/notify.sh" "$id" && echo "$(date +%T) $id -> $st (đã báo lead)"
+    fi
+    last[$id]="$st"
+  done
+}
+
+mkdir -p "$DIR"
+scan 0
+echo "Đang theo dõi $DIR (mỗi ${INTERVAL}s). Ctrl-c để dừng."
+while sleep "$INTERVAL"; do scan 1; done
 EOF
 
 chmod +x scripts/*.sh
