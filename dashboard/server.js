@@ -7,6 +7,7 @@
 const http = require('http');
 const fs = require('fs');
 const path = require('path');
+const os = require('os');
 const { execFile } = require('child_process');
 
 const ROOT = path.resolve(process.env.REPO || path.join(__dirname, '..'));
@@ -142,13 +143,21 @@ async function sessionInfo() {
 }
 
 async function sendText(win, text, enter) {
+  const target = `${SESSION}:${win}`;
   if (text) {
-    const r = await tmux('send-keys', '-t', `${SESSION}:${win}`, '-l', text);
+    // Dán qua buffer với bracketed paste (-p): tin nhiều dòng không bị gửi từng dòng một.
+    const tmp = path.join(os.tmpdir(), `squad-${process.pid}-${Date.now()}.txt`);
+    fs.writeFileSync(tmp, text);
+    const buf = `squad-${process.pid}`;
+    const l = await tmux('load-buffer', '-b', buf, tmp);
+    fs.rmSync(tmp, { force: true });
+    if (!l.ok) return l;
+    const r = await tmux('paste-buffer', '-p', '-d', '-b', buf, '-t', target);
     if (!r.ok) return r;
   }
   if (enter) {
     await new Promise((res) => setTimeout(res, 400)); // như assign.sh: đợi TUI nhận xong chữ
-    return tmux('send-keys', '-t', `${SESSION}:${win}`, 'Enter');
+    return tmux('send-keys', '-t', target, 'Enter');
   }
   return { ok: true };
 }
@@ -243,10 +252,39 @@ on('POST', /^\/api\/send$/, async (req, res) => {
 
 on('POST', /^\/api\/start$/, async (req, res) => {
   const b = await readBody(req);
-  const workers = String(b.workers || DEFAULT_WORKERS).split(/[\s,]+/).filter((w) => WIN_RE.test(w)).join(' ') || 'codex';
-  const r = await run(path.join(ROOT, 'scripts', 'start-agents.sh'), [], { env: { ...process.env, SESSION, WORKERS: workers }, timeout: 60000 });
+  const MODEL_RE = /^[A-Za-z0-9._:/-]{0,64}$/;
+  let workers;
+  if (Array.isArray(b.workers)) {
+    workers = b.workers
+      .filter((w) => w && WIN_RE.test(w.agent || '') && MODEL_RE.test(w.model || ''))
+      .map((w) => (w.model ? `${w.agent}@${w.model}` : w.agent)).join(' ');
+  } else {
+    workers = String(b.workers || DEFAULT_WORKERS).split(/[\s,]+/).filter((w) => /^[A-Za-z0-9_-]+(@[A-Za-z0-9._:/-]+)?$/.test(w)).join(' ');
+  }
+  const leadModel = MODEL_RE.test(b.leadModel || '') ? (b.leadModel || '') : '';
+  const env = { ...process.env, SESSION, WORKERS: workers || 'codex', LEAD_MODEL: leadModel };
+  const r = await run(path.join(ROOT, 'scripts', 'start-agents.sh'), [], { env, timeout: 60000 });
   send(res, r.ok ? 200 : 500, { ok: r.ok, out: (r.out + r.err).trim() });
 });
+
+// Đính kèm file: lưu vào .agents/uploads/ (worker thấy qua symlink .agents) rồi trả về đường dẫn.
+on('POST', /^\/api\/upload$/, (req, res) => new Promise((resolve) => {
+  const url = new URL(req.url, 'http://x');
+  const base = path.basename(String(url.searchParams.get('name') || 'file')).replace(/[^\w.\-]+/g, '_').slice(-80) || 'file';
+  const dir = path.join(ROOT, '.agents', 'uploads');
+  fs.mkdirSync(dir, { recursive: true });
+  const stamp = new Date().toISOString().replace(/[-:T]/g, '').slice(0, 14);
+  const file = path.join(dir, `${stamp}-${base}`);
+  const out = fs.createWriteStream(file, { flags: 'wx' });
+  let size = 0, failed = false;
+  req.on('data', (c) => {
+    size += c.length;
+    if (size > 25 * 1024 * 1024 && !failed) { failed = true; req.unpipe(out); out.destroy(); fs.rm(file, () => {}); send(res, 413, { error: 'File quá lớn (tối đa 25 MB)' }); resolve(); }
+  });
+  req.pipe(out);
+  out.on('finish', () => { if (!failed) { send(res, 200, { path: file }); resolve(); } });
+  out.on('error', (e) => { if (!failed) { failed = true; send(res, 500, { error: e.message }); resolve(); } });
+}));
 
 on('POST', /^\/api\/stop$/, async (req, res) => {
   const r = await tmux('kill-session', '-t', SESSION);

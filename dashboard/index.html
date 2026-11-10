@@ -10,6 +10,7 @@
 @media (prefers-color-scheme:dark){:root{--bg:#0f1216;--panel:#171b21;--line:#2a3039;--text:#e4e8ec;--muted:#8d97a3;
   --accent:#5b8ef0;--term:#0a0c0f;--term-text:#cfd6dd}}
 *{box-sizing:border-box}
+[hidden]{display:none!important}
 body{margin:0;background:var(--bg);color:var(--text);font:14px/1.45 system-ui,-apple-system,"Segoe UI",sans-serif}
 header{display:flex;flex-wrap:wrap;gap:10px;align-items:center;padding:10px 16px;border-bottom:1px solid var(--line);background:var(--panel)}
 header h1{font-size:16px;margin:0 8px 0 0}
@@ -58,6 +59,17 @@ dialog::backdrop{background:rgba(0,0,0,.45)}
 .toast{background:var(--panel);border:1px solid var(--line);border-left:4px solid var(--accent);border-radius:8px;padding:8px 12px;max-width:360px;box-shadow:0 4px 16px rgba(0,0,0,.15);white-space:pre-wrap}
 .toast.err{border-left-color:var(--blocked)}.toast.ok{border-left-color:var(--done)}
 .hint{font-size:12px;color:var(--muted)}
+.chips{display:flex;gap:6px;flex-wrap:wrap;padding:0 8px}
+.chip{display:inline-flex;gap:6px;align-items:center;font-size:12px;border:1px solid var(--line);border-radius:99px;padding:2px 4px 2px 10px;background:var(--bg)}
+.chip button{border:0;padding:0 6px;background:none}
+.sendbar textarea.drag{border-color:var(--accent);outline:2px dashed var(--accent)}
+.seg{display:inline-flex;border:1px solid var(--line);border-radius:8px;overflow:hidden}
+.seg button{border:0;border-radius:0;padding:6px 14px}
+.seg button.sel{background:var(--accent);color:var(--accent-text)}
+.wrow{display:grid;grid-template-columns:120px 1fr auto;gap:8px;align-items:center}
+.box{border:1px solid var(--line);border-radius:8px;padding:10px;display:grid;gap:8px}
+.box h4{margin:0;font-size:13px}
+details summary{cursor:pointer;color:var(--muted);font-size:12px}
 </style>
 </head>
 <body>
@@ -65,14 +77,15 @@ dialog::backdrop{background:rgba(0,0,0,.45)}
   <h1>Agent-Squad</h1>
   <span class="pill"><span id="sdot" class="dot"></span><span id="stext">đang tải…</span></span>
   <span class="spacer"></span>
-  <input id="workers" size="14" title="Các worker khi Start (cách nhau bằng dấu cách)">
+  <span class="hint" id="cfgSummary"></span>
+  <button id="btnCfg">Chọn agent &amp; model</button>
   <button id="btnStart" class="primary">Start agents</button>
   <button id="btnStop" class="danger">Stop</button>
 </header>
 
 <main>
   <section>
-    <h2>Tasks <span class="spacer"></span><button id="btnNew" class="primary small">+ Task mới</button></h2>
+    <h2>Tasks <span class="spacer"></span><button id="btnNew" class="primary small">+ Việc mới</button></h2>
     <div class="board" id="board"></div>
   </section>
 
@@ -80,10 +93,13 @@ dialog::backdrop{background:rgba(0,0,0,.45)}
     <h2><span class="tabs" id="tabs"></span><span class="spacer"></span><label class="hint"><input type="checkbox" id="follow" checked> tự cuộn</label></h2>
     <pre class="term" id="term">Chưa có phiên tmux. Bấm "Start agents".</pre>
     <div class="sendbar">
-      <textarea id="msg" placeholder="Nhắn cho window đang chọn (Enter để gửi, Shift+Enter xuống dòng)"></textarea>
+      <button id="btnAttach" title="Đính kèm file (hoặc kéo thả / dán ảnh vào ô nhắn)">📎</button>
+      <textarea id="msg" placeholder="Nhắn cho window đang chọn. Enter để gửi, Shift+Enter xuống dòng. Kéo thả hoặc dán ảnh/file vào đây."></textarea>
       <button id="btnSend" class="primary">Gửi</button>
     </div>
+    <div class="chips" id="chips"></div>
     <div class="keys" id="keys"></div>
+    <input type="file" id="fileInput" multiple hidden>
   </section>
 </main>
 
@@ -98,19 +114,51 @@ dialog::backdrop{background:rgba(0,0,0,.45)}
 </dialog>
 
 <dialog id="dlgNew">
-  <div class="dlg-h"><h3>Task mới</h3><button id="dnClose" class="small">Đóng</button></div>
-  <div class="dlg-b">
-    <label>Tiêu đề<input id="nTitle"></label>
-    <label>Goal<textarea id="nGoal"></textarea></label>
-    <label>Files you may edit (mỗi dòng một đường dẫn)<textarea id="nFiles"></textarea></label>
-    <label>Context (mỗi dòng một file)<textarea id="nContext"></textarea></label>
-    <label>Done when (mỗi dòng một lệnh kiểm tra)<textarea id="nDone">bash -n scripts/*.sh</textarea></label>
-    <div class="row">Worker <select id="nOwner"></select>
+  <div class="dlg-h"><h3>Việc mới</h3>
+    <span class="seg"><button id="modeLead" class="sel">Nhờ lead chia việc</button><button id="modeSelf">Tự giao cho 1 worker</button></span>
+    <button id="dnClose" class="small">Đóng</button></div>
+  <div class="dlg-b" id="paneLead">
+    <p class="hint" style="margin:0">Cách dễ nhất: mô tả việc bạn muốn, Claude (lead) sẽ tự chia thành các task nhỏ và giao cho worker. Kết quả hiện ở bảng Tasks.</p>
+    <label>Bạn muốn làm gì?<textarea id="lText" style="min-height:140px" placeholder="Ví dụ: Thêm trang đăng nhập bằng email cho web app, có kiểm tra lỗi và test."></textarea></label>
+    <div class="row"><button id="lAttach" class="small">📎 Đính kèm file</button><span class="chips" id="lChips" style="padding:0"></span>
+      <span class="spacer"></span><button id="lSend" class="primary">Gửi cho lead</button></div>
+  </div>
+  <div class="dlg-b" id="paneSelf" hidden>
+    <p class="hint" style="margin:0">Tự viết một task và giao thẳng cho một worker, không qua lead. Chỉ cần tiêu đề và mô tả; hai ô còn lại có thể để trống.</p>
+    <label>Tiêu đề ngắn<input id="nTitle" placeholder="Ví dụ: Sửa lỗi nút Lưu không hoạt động"></label>
+    <label>Cần làm gì (càng cụ thể càng tốt)<textarea id="nGoal" placeholder="Mô tả kết quả mong muốn, lỗi gặp phải, cách tái hiện..."></textarea></label>
+    <details><summary>Tuỳ chọn thêm (file được sửa, cách kiểm tra)</summary>
+      <div style="display:grid;gap:10px;margin-top:8px">
+        <label>Worker chỉ được sửa các file/thư mục này (mỗi dòng một cái, để trống = worker tự xác định)<textarea id="nFiles" placeholder="src/login/&#10;tests/login.test.js"></textarea></label>
+        <label>File nên đọc trước (mỗi dòng một cái)<textarea id="nContext" placeholder="docs/api.md"></textarea></label>
+        <label>Lệnh kiểm tra khi xong (mỗi dòng một lệnh)<textarea id="nDone" placeholder="npm test"></textarea></label>
+      </div>
+    </details>
+    <div class="row">Giao cho <select id="nOwner"></select>
       <label style="display:flex;gap:6px;align-items:center;color:var(--text)"><input type="checkbox" id="nAssign" checked> giao ngay</label>
       <span class="spacer"></span><button id="dnCreate" class="primary">Tạo task</button></div>
-    <p class="hint">Mẹo: thay vì tự viết task, có thể nhắn yêu cầu cho window <b>lead</b> để Claude chia task và giao giúp.</p>
   </div>
 </dialog>
+
+<dialog id="dlgCfg">
+  <div class="dlg-h"><h3>Chọn agent &amp; model</h3><button id="cfgClose" class="small">Đóng</button></div>
+  <div class="dlg-b">
+    <div class="box"><h4>Lead (luôn là Claude Code)</h4>
+      <div class="wrow"><span>Model</span><input id="cfgLead" list="m-claude" placeholder="mặc định"><span></span></div>
+    </div>
+    <div class="box"><h4>Workers</h4>
+      <div id="cfgWorkers" style="display:grid;gap:6px"></div>
+      <div class="row"><button id="cfgAdd" class="small">+ Thêm worker</button>
+        <span class="hint">Để trống model = dùng model mặc định của agent đó. Gõ tên model giống như trong lệnh /model của agent.</span></div>
+    </div>
+    <p class="hint" style="margin:0">Model chỉ áp dụng khi Start. Nếu phiên đang chạy: bấm Stop rồi Start lại.</p>
+    <div class="row"><span class="spacer"></span><button id="cfgSave" class="primary">Lưu</button><button id="cfgSaveStart" class="primary">Lưu &amp; Start</button></div>
+  </div>
+</dialog>
+
+<datalist id="m-claude"><option value="opus"><option value="sonnet"><option value="haiku"><option value="claude-opus-5-5"><option value="claude-sonnet-5-5"><option value="claude-haiku-5-5"><option value="claude-fable-5-2"></datalist>
+<datalist id="m-codex"></datalist>
+<datalist id="m-gemini"></datalist>
 
 <div id="toasts"></div>
 
@@ -118,7 +166,9 @@ dialog::backdrop{background:rgba(0,0,0,.45)}
 const $ = (s) => document.querySelector(s);
 const COLS = [['todo','Todo'],['in-progress','Đang làm'],['blocked','Bị chặn'],['done','Xong']];
 const KEYS = [['Enter','Enter'],['Escape','Esc'],['C-c','Ctrl-C'],['Up','↑'],['Down','↓'],['Tab','Tab'],['y','y'],['n','n']];
+const AGENTS = ['codex','claude','gemini'];
 let state = null, win = localGet('win') || 'lead', lastStatus = null, current = null;
+let attachments = [], leadAttachments = [], attachTarget = 'msg';
 
 function localGet(k){try{return localStorage.getItem('squad.'+k)}catch{return null}}
 function localSet(k,v){try{localStorage.setItem('squad.'+k,v)}catch{}}
@@ -132,10 +182,51 @@ async function api(method, url, body){
   return j;
 }
 
+// ---------------------------------------------------------------- cấu hình agent & model
+function loadCfg(){
+  try{const c=JSON.parse(localGet('cfg')||'null'); if(c&&Array.isArray(c.workers)) return c}catch{}
+  return {leadModel:'', workers:[{agent:'codex',model:''}]};
+}
+let cfg = loadCfg();
+const winName = (w)=> w.model ? `${w.agent}-${w.model.replace(/[^A-Za-z0-9_-]/g,'-')}` : w.agent;
+function cfgSummaryText(){return 'lead: claude' + (cfg.leadModel?` (${cfg.leadModel})`:'') + ' · ' + cfg.workers.map(w=>w.agent+(w.model?` (${w.model})`:'')).join(', ')}
+function rememberModel(agent, model){
+  if(!model) return; const k='models.'+agent; const list=JSON.parse(localGet(k)||'[]');
+  if(!list.includes(model)){list.unshift(model); localSet(k, JSON.stringify(list.slice(0,10)))}
+}
+function fillModelLists(){
+  for(const a of ['codex','gemini']){ const list=JSON.parse(localGet('models.'+a)||'[]'); $('#m-'+a).innerHTML=list.map(m=>`<option value="${esc(m)}">`).join('') }
+}
+function renderCfg(){
+  $('#cfgLead').value = cfg.leadModel || '';
+  $('#cfgWorkers').innerHTML = cfg.workers.map((w,i)=>`<div class="wrow" data-i="${i}">
+    <select class="ag">${AGENTS.map(a=>`<option${a===w.agent?' selected':''}>${a}</option>`).join('')}</select>
+    <input class="md" list="m-${esc(w.agent)}" value="${esc(w.model||'')}" placeholder="model mặc định">
+    <button class="small danger rm" title="Bỏ worker này">✕</button></div>`).join('');
+}
+function readCfgForm(){
+  const workers=[...document.querySelectorAll('#cfgWorkers .wrow')].map(r=>({agent:r.querySelector('.ag').value, model:r.querySelector('.md').value.trim()}));
+  return {leadModel:$('#cfgLead').value.trim(), workers: workers.length?workers:[{agent:'codex',model:''}]};
+}
+function saveCfg(){
+  cfg = readCfgForm();
+  const names = cfg.workers.map(winName);
+  if(new Set(names).size!==names.length){toast('Hai worker trùng agent và model. Hãy đổi model của một worker.','err'); return false}
+  for(const w of cfg.workers) rememberModel(w.agent, w.model);
+  localSet('cfg', JSON.stringify(cfg)); fillModelLists(); $('#cfgSummary').textContent = cfgSummaryText(); return true;
+}
+$('#btnCfg').onclick = ()=>{fillModelLists(); renderCfg(); $('#dlgCfg').showModal()};
+$('#cfgClose').onclick = ()=>$('#dlgCfg').close();
+$('#cfgAdd').onclick = ()=>{cfg = readCfgForm(); cfg.workers.push({agent:'codex',model:''}); renderCfg()};
+$('#cfgWorkers').addEventListener('click',e=>{const b=e.target.closest('.rm'); if(!b) return; cfg=readCfgForm(); cfg.workers.splice(+b.closest('.wrow').dataset.i,1); renderCfg()});
+$('#cfgWorkers').addEventListener('change',e=>{if(e.target.classList.contains('ag')) e.target.closest('.wrow').querySelector('.md').setAttribute('list','m-'+e.target.value)});
+$('#cfgSave').onclick = ()=>{if(saveCfg()){$('#dlgCfg').close(); toast('Đã lưu. Áp dụng ở lần Start tiếp theo.','ok')}};
+$('#cfgSaveStart').onclick = ()=>{if(saveCfg()){$('#dlgCfg').close(); startAgents()}};
+
+// ---------------------------------------------------------------- bảng task & window
 function workers(){
   const fromSession = state && state.running ? state.windows.map(w=>w.name).filter(n=>!['lead','watch'].includes(n)) : [];
-  const list = fromSession.length ? fromSession : ($('#workers').value || state?.defaultWorkers || 'codex').split(/\s+/).filter(Boolean);
-  return [...new Set(list)];
+  return [...new Set(fromSession.length ? fromSession : cfg.workers.map(winName))];
 }
 function fillWorkers(sel, pick){sel.innerHTML = workers().map(w=>`<option${w===pick?' selected':''}>${esc(w)}</option>`).join('')}
 
@@ -170,7 +261,6 @@ async function refreshState(){
     state = await api('GET','/api/state');
     $('#sdot').classList.toggle('on', state.running);
     $('#stext').textContent = state.running ? `phiên "${state.session}" đang chạy · ${state.windows.length} window` : `chưa chạy phiên "${state.session}"`;
-    if(!$('#workers').value) $('#workers').value = localGet('workers') || state.defaultWorkers;
     renderBoard(); renderTabs(); notifyChanges();
   }catch(e){$('#stext').textContent='mất kết nối tới server'; $('#sdot').classList.remove('on')}
 }
@@ -180,13 +270,48 @@ async function refreshPane(){
   try{
     const {text} = await api('GET','/api/pane/'+encodeURIComponent(win));
     const t=$('#term'); const atBottom = t.scrollTop + t.clientHeight >= t.scrollHeight - 30;
-    if(t.textContent!==text){t.textContent=text; if($('#follow').checked && atBottom || $('#follow').checked && !t.dataset.seen) t.scrollTop=t.scrollHeight; t.dataset.seen=1}
+    if(t.textContent!==text){t.textContent=text; if($('#follow').checked && (atBottom || !t.dataset.seen)) t.scrollTop=t.scrollHeight; t.dataset.seen=1}
   }catch(e){$('#term').textContent=e.message}
 }
 
+// ---------------------------------------------------------------- đính kèm file
+async function uploadFiles(files, list){
+  for(const f of files){
+    try{
+      const name = f.name || ('paste-'+Date.now()+'.'+((f.type.split('/')[1])||'bin'));
+      const r = await fetch('/api/upload?name='+encodeURIComponent(name),{method:'POST',headers:{'X-Squad':'1'},body:f});
+      const j = await r.json().catch(()=>({}));
+      if(!r.ok) throw new Error(j.error||('HTTP '+r.status));
+      list.push({name, path:j.path});
+    }catch(e){toast('Không tải được '+(f.name||'file')+': '+e.message,'err')}
+  }
+  renderChips();
+}
+function renderChips(){
+  const html = (list,key)=>list.map((a,i)=>`<span class="chip" title="${esc(a.path)}">📄 ${esc(a.name)}<button data-list="${key}" data-i="${i}">✕</button></span>`).join('');
+  $('#chips').innerHTML = html(attachments,'msg'); $('#lChips').innerHTML = html(leadAttachments,'lead');
+}
+function withAttachments(text, list){
+  if(!list.length) return text;
+  return text + '\n\nFile đính kèm (đọc các file này):\n' + list.map(a=>'- '+a.path).join('\n');
+}
+document.addEventListener('click',e=>{const b=e.target.closest('.chip button'); if(!b) return; (b.dataset.list==='lead'?leadAttachments:attachments).splice(+b.dataset.i,1); renderChips()});
+$('#btnAttach').onclick = ()=>{attachTarget='msg'; $('#fileInput').click()};
+$('#lAttach').onclick = ()=>{attachTarget='lead'; $('#fileInput').click()};
+$('#fileInput').onchange = ()=>{uploadFiles([...$('#fileInput').files], attachTarget==='lead'?leadAttachments:attachments); $('#fileInput').value=''};
+for(const [id,listFn] of [['#msg',()=>attachments],['#lText',()=>leadAttachments]]){
+  const el=$(id);
+  el.addEventListener('paste',e=>{const fs=[...(e.clipboardData?.files||[])]; if(fs.length){e.preventDefault(); uploadFiles(fs, listFn())}});
+  el.addEventListener('dragover',e=>{e.preventDefault(); el.classList.add('drag')});
+  el.addEventListener('dragleave',()=>el.classList.remove('drag'));
+  el.addEventListener('drop',e=>{e.preventDefault(); el.classList.remove('drag'); const fs=[...(e.dataTransfer?.files||[])]; if(fs.length) uploadFiles(fs, listFn())});
+}
+
+// ---------------------------------------------------------------- gửi tin
+async function sendTo(target, text){ await api('POST','/api/send',{win:target,text}); }
 async function sendMsg(){
-  const text = $('#msg').value; if(!text.trim()) return;
-  try{await api('POST','/api/send',{win,text}); $('#msg').value=''; setTimeout(refreshPane,600)}catch(e){toast(e.message,'err')}
+  const text = $('#msg').value; if(!text.trim() && !attachments.length) return;
+  try{await sendTo(win, withAttachments(text.trim(), attachments)); $('#msg').value=''; attachments=[]; renderChips(); setTimeout(refreshPane,600)}catch(e){toast(e.message,'err')}
 }
 
 async function openTask(id){
@@ -198,19 +323,20 @@ async function openTask(id){
   }catch(e){toast(e.message,'err')}
 }
 
+async function startAgents(){
+  $('#btnStart').disabled=true;
+  try{const r=await api('POST','/api/start',{leadModel:cfg.leadModel, workers:cfg.workers}); toast(r.out||'Đã start','ok')}catch(e){toast(e.message,'err')}
+  $('#btnStart').disabled=false; refreshState();
+}
+
 $('#board').addEventListener('click',e=>{const c=e.target.closest('.card'); if(c) openTask(c.dataset.id)});
 $('#tabs').addEventListener('click',e=>{const b=e.target.closest('[data-win]'); if(!b) return; win=b.dataset.win; localSet('win',win); delete $('#term').dataset.seen; renderTabs(); refreshPane()});
 $('#keys').innerHTML = KEYS.map(([k,l])=>`<button class="small" data-key="${k}">${l}</button>`).join('') + '<span class="hint" style="align-self:center">gửi phím vào window đang chọn</span>';
 $('#keys').addEventListener('click',async e=>{const b=e.target.closest('[data-key]'); if(!b) return; try{await api('POST','/api/send',{win,key:b.dataset.key}); setTimeout(refreshPane,300)}catch(x){toast(x.message,'err')}});
 $('#btnSend').onclick = sendMsg;
 $('#msg').addEventListener('keydown',e=>{if(e.key==='Enter'&&!e.shiftKey&&!e.isComposing){e.preventDefault();sendMsg()}});
-$('#workers').addEventListener('change',()=>localSet('workers',$('#workers').value));
 
-$('#btnStart').onclick = async()=>{
-  $('#btnStart').disabled=true;
-  try{const r=await api('POST','/api/start',{workers:$('#workers').value}); toast(r.out||'Đã start','ok')}catch(e){toast(e.message,'err')}
-  $('#btnStart').disabled=false; refreshState();
-};
+$('#btnStart').onclick = startAgents;
 $('#btnStop').onclick = async()=>{
   if(!confirm('Dừng toàn bộ phiên tmux (lead và mọi worker)? Cuộc trò chuyện đang mở trong các agent sẽ bị đóng.')) return;
   try{await api('POST','/api/stop'); toast('Đã dừng phiên','ok')}catch(e){toast(e.message,'err')} refreshState();
@@ -222,18 +348,33 @@ $('#dtAssign').onclick = async()=>{
   try{const r=await api('POST','/api/assign',{id:current,worker:$('#dtWorker').value}); toast(r.out,'ok'); $('#dlgTask').close(); refreshState()}catch(e){toast(e.message,'err')}
 };
 
-$('#btnNew').onclick = ()=>{fillWorkers($('#nOwner'), workers()[0]); $('#dlgNew').showModal(); $('#nTitle').focus()};
+// ---------------------------------------------------------------- việc mới
+function setMode(m){localSet('newMode',m); $('#modeLead').classList.toggle('sel',m==='lead'); $('#modeSelf').classList.toggle('sel',m==='self'); $('#paneLead').hidden=m!=='lead'; $('#paneSelf').hidden=m!=='self'}
+$('#modeLead').onclick=()=>setMode('lead'); $('#modeSelf').onclick=()=>setMode('self');
+$('#btnNew').onclick = ()=>{fillWorkers($('#nOwner'), workers()[0]); setMode(localGet('newMode')||'lead'); $('#dlgNew').showModal(); (localGet('newMode')==='self'?$('#nTitle'):$('#lText')).focus()};
 $('#dnClose').onclick = ()=>$('#dlgNew').close();
+$('#lSend').onclick = async()=>{
+  const text=$('#lText').value.trim(); if(!text){toast('Hãy mô tả việc cần làm','err'); return}
+  if(!state?.running){toast('Phiên chưa chạy. Bấm "Start agents" trước.','err'); return}
+  try{
+    await sendTo('lead', withAttachments(text, leadAttachments));
+    $('#lText').value=''; leadAttachments=[]; renderChips(); $('#dlgNew').close();
+    win='lead'; localSet('win',win); renderTabs(); refreshPane(); toast('Đã gửi cho lead. Task sẽ hiện ở bảng khi lead tạo xong.','ok');
+  }catch(e){toast(e.message,'err')}
+};
 $('#dnCreate').onclick = async()=>{
-  const body={title:$('#nTitle').value,goal:$('#nGoal').value,files:$('#nFiles').value,context:$('#nContext').value,done:$('#nDone').value,owner:$('#nOwner').value,assign:$('#nAssign').checked && !!state?.running};
+  const wantAssign = $('#nAssign').checked;
+  const body={title:$('#nTitle').value,goal:$('#nGoal').value,files:$('#nFiles').value||'(not specified: decide yourself, keep changes minimal)',context:$('#nContext').value,done:$('#nDone').value||'(no command given: verify the change yourself)',owner:$('#nOwner').value,assign:wantAssign && !!state?.running};
   try{
     const r = await api('POST','/api/task',body);
-    toast(`Đã tạo ${r.id}` + (r.assigned ? `\n${r.assigned.out}` : (body.assign===false&&$('#nAssign').checked?'\n(chưa giao vì phiên chưa chạy)':'')), r.assigned && !r.assigned.ok ? 'err':'ok');
-    for(const id of ['#nTitle','#nGoal','#nFiles','#nContext']) $(id).value='';
+    toast(`Đã tạo ${r.id}` + (r.assigned ? `\n${r.assigned.out}` : (wantAssign?'\n(chưa giao vì phiên chưa chạy)':'')), r.assigned && !r.assigned.ok ? 'err':'ok');
+    for(const id of ['#nTitle','#nGoal','#nFiles','#nContext','#nDone']) $(id).value='';
     $('#dlgNew').close(); refreshState();
   }catch(e){toast(e.message,'err')}
 };
 
+$('#cfgSummary').textContent = cfgSummaryText();
+fillModelLists();
 refreshState().then(refreshPane);
 setInterval(refreshState, 3000);
 setInterval(refreshPane, 1500);

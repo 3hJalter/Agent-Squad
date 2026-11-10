@@ -8,13 +8,15 @@ File này cập nhật code trong WSL, bật các agent và mở dashboard thàn
 
 - `AGENTS.md`: quy tắc chung cho mọi agent. `CLAUDE.md`: luật bổ sung cho lead.
 - `.agents/tasks/`: file task (không commit). Mẫu: `.agents/tasks/_template.md`.
-- `scripts/start-agents.sh`: dựng phiên tmux (lead = claude, workers = codex/gemini, mỗi worker một git worktree).
+- `scripts/start-agents.sh`: dựng phiên tmux (lead = claude, workers = codex/claude/gemini, mỗi worker một git worktree).
+  Chọn model: `LEAD_MODEL=opus WORKERS="codex@<model> claude@sonnet" scripts/start-agents.sh`
+  (trên dashboard: nút "Chọn agent & model").
 - `scripts/assign.sh <ID> <worker>`: lead giao task.
 - `scripts/watch-tasks.sh`: chạy nền trong window `watch`, tự báo lead khi một task chuyển sang `done`/`blocked`
   (worker chỉ cần sửa dòng `Status:`, không phải tự gọi tmux, vì sandbox của Codex có thể chặn).
   `scripts/notify.sh <ID>` vẫn dùng được để báo tay.
 - `scripts/dashboard.sh`: web dashboard ở http://localhost:7070.
-  Xem bảng task theo Status, tạo task và giao cho worker, sửa file task, xem màn hình từng window
+  Xem bảng task theo Status, nhờ lead chia việc hoặc tự tạo task và giao cho worker, đính kèm file/ảnh (lưu vào `.agents/uploads/`), sửa file task, xem màn hình từng window
   tmux (lead, codex, ...) và gõ lệnh/phím vào đó, Start/Stop phiên agents. Chỉ cần Node, không cài gói npm.
   Điều khiển repo khác: `REPO=~/proj scripts/dashboard.sh`.
 
