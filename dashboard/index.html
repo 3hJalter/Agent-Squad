@@ -172,7 +172,7 @@ a.btn:hover{border-color:var(--accent)}
 .bar{height:6px;border-radius:3px;background:var(--line);overflow:hidden}
 .bar i{display:block;height:100%;background:var(--accent)}
 .bar.claude i{background:#d97757}.bar.codex i{background:#10a37f}.bar.gemini i{background:#4c8df6}
-.utable{display:grid;grid-template-columns:minmax(90px,1.2fr) minmax(110px,1.6fr) 50px 76px 76px 76px minmax(90px,1fr);gap:6px 10px;align-items:center;font-size:13px}
+.utable{display:grid;grid-template-columns:minmax(80px,1.1fr) minmax(110px,1.6fr) 44px 70px 70px 70px 72px minmax(90px,1fr);gap:6px 10px;align-items:center;font-size:13px}
 .utable .h{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em}
 .utable .r{text-align:right;font-variant-numeric:tabular-nums}
 .tab .busy{display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--prog);margin-left:6px;animation:bl 1.2s infinite}
@@ -276,6 +276,10 @@ a.btn:hover{border-color:var(--accent)}
     <div class="box"><h4>Kiểu hiển thị</h4>
       <span class="seg"><button id="vmChat">💬 Chat (dễ dùng)</button><button id="vmTerm">🖥 Terminal (như cũ)</button></span>
       <p class="hint" style="margin:0" id="vmHint"></p>
+    </div>
+    <div class="box"><h4>⚡ Tiết kiệm token (thử nghiệm)</h4>
+      <label style="display:flex;gap:6px;align-items:center;color:var(--text)"><input type="checkbox" id="cmToggle"> Bật context-mode cho các agent Claude của project này</label>
+      <p class="hint" style="margin:0">context-mode (<code>mksglu/context-mode</code>) giữ dữ liệu lớn như log dài hay nhiều file ngoài ngữ cảnh, chỉ đưa cho agent kết quả cần dùng. Cần Node.js 22.5 trở lên trong WSL và có mạng ở lần chạy đầu (tải bằng npx). Chỉ áp dụng cho agent Claude, từ lượt nhắn tiếp theo, không cần Start lại. So sánh ở bảng 📊 Token: dòng có ⚡ là lượt chạy có context-mode, nhìn cột "TB/lượt". <b>Rủi ro:</b> nó cho agent chạy code trong ô riêng, nên danh sách lệnh an toàn và nút "Cho phép" không kiểm soát được phần này.</p>
     </div>
     <div class="box"><h4>Lead (nói chuyện với bạn, chia và giao việc)</h4>
       <div class="arow head"><span>Tên</span><span>Agent</span><span>Model</span><span>Effort</span><span></span></div>
@@ -558,7 +562,13 @@ function saveCfg(){
   resolveNames(c.workers).forEach((n,i)=>{ c.workers[i].name = n });
   cfg=c; localSet('cfg.'+proj, JSON.stringify(cfg)); $('#cfgSummary').textContent = $('#cfgSummary').title = cfgSummaryText(); return true;
 }
-$('#btnCfg').onclick = ()=>{cfg=loadCfg(); renderCfg(); $('#cfgProj').textContent = '· '+($('#projSel').selectedOptions[0]?.textContent||''); $('#dlgCfg').showModal()};
+$('#cmToggle').addEventListener('change', async e=>{
+  const want = e.target.checked;
+  if(want && !confirm('Bật context-mode?\n\nNó cho agent Claude chạy code (Python, shell...) trong một ô riêng. Phần này nằm ngoài danh sách lệnh an toàn và nút "Cho phép", nên agent có thể chạy lệnh (ví dụ xoá file, git push) mà bạn không được hỏi.\n\nChỉ bật nếu bạn chấp nhận rủi ro đó. Tắt lại bất cứ lúc nào.')){ e.target.checked=false; return }
+  try{ await api('POST','/api/project/settings',{contextMode:want}); toast(want?'Đã bật context-mode. Áp dụng từ lượt nhắn tiếp theo của agent Claude.':'Đã tắt context-mode.','ok'); await refreshState() }
+  catch(x){ toast(x.message,'err'); e.target.checked=!want }
+});
+$('#btnCfg').onclick = ()=>{cfg=loadCfg(); renderCfg(); $('#cmToggle').checked = !!state?.project?.contextMode; $('#cfgProj').textContent = '· '+($('#projSel').selectedOptions[0]?.textContent||''); $('#dlgCfg').showModal()};
 $('#cfgClose').onclick = ()=>$('#dlgCfg').close();
 $('#cfgAdd').onclick = ()=>{cfg = readCfgForm(); const w={agent:'codex',model:'',effort:''}; w.name = resolveNames([...cfg.workers, w]).pop(); cfg.workers.push(w); renderCfg()};
 $('#dlgCfg').addEventListener('click',e=>{const b=e.target.closest('.rm'); if(!b) return; cfg=readCfgForm(); cfg.workers.splice(+b.closest('.arow').dataset.i,1); renderCfg()});
@@ -749,8 +759,8 @@ async function renderUsage(){
     <div>Tổng cộng <b title="${total} token">${fmtTok(total)}</b> token${cost?` · ước tính <b>$${cost.toFixed(2)}</b> (chỉ Claude báo chi phí)`:''}${j.since&&usageRange==='all'?` <span class="hint">· từ ${esc(j.since)}</span>`:''}</div>
     <div class="utot">${prov.map(p=>`<div class="ucard"><span class="hint">${esc(catalog[p.a]?.label||p.a)}</span><span class="big" title="${p.total} token">${fmtTok(p.total)} <span class="hint" style="font-weight:400">${pct(p.total,total)}</span></span>
       <div class="bar ${p.a}"><i style="width:${total?p.total/total*100:0}%"></i></div><span class="hint">${p.turns} lượt${p.cost?' · $'+p.cost.toFixed(2):''}</span></div>`).join('')}</div>
-    <div class="utable"><span class="h">Agent</span><span class="h">Hãng · model</span><span class="h r">Lượt</span><span class="h r">Vào</span><span class="h r">Ra</span><span class="h r">Tổng</span><span class="h">% tổng</span>
-      ${rows.map(r=>`<b>${esc(agLabel(r.name))}</b><span class="hint">${esc(r.agent)}${r.model?' · '+esc(r.model):' · mặc định'}</span><span class="r">${r.turns}</span><span class="r" title="${r.in} token, trong đó ${r.cached||0} lấy từ bộ nhớ đệm">${fmtTok(r.in)}</span><span class="r" title="${r.out} token">${fmtTok(r.out)}</span><span class="r" title="${r.total} token"><b>${fmtTok(r.total)}</b></span>
+    <div class="utable"><span class="h">Agent</span><span class="h">Hãng · model</span><span class="h r">Lượt</span><span class="h r">Vào</span><span class="h r">Ra</span><span class="h r">Tổng</span><span class="h r" title="Trung bình token mỗi lượt (vào + ra)">TB/lượt</span><span class="h">% tổng</span>
+      ${rows.map(r=>`<b>${esc(agLabel(r.name))}</b><span class="hint">${esc(r.agent)}${r.model?' · '+esc(r.model):' · mặc định'}${r.cm?' · <b title="Lượt chạy có context-mode">⚡ context-mode</b>':''}</span><span class="r">${r.turns}</span><span class="r" title="${r.in} token, trong đó ${r.cached||0} lấy từ bộ nhớ đệm">${fmtTok(r.in)}</span><span class="r" title="${r.out} token">${fmtTok(r.out)}</span><span class="r" title="${r.total} token"><b>${fmtTok(r.total)}</b></span><span class="r" title="${r.turns?Math.round(r.total/r.turns):0} token mỗi lượt">${r.turns?fmtTok(r.total/r.turns):'-'}</span>
         <span class="row" style="gap:6px;flex-wrap:nowrap"><span class="bar ${esc(r.agent)}" style="flex:1"><i style="width:${r.total/total*100}%"></i></span><span style="width:42px;text-align:right">${pct(r.total,total)}</span></span>`).join('')}</div></div>`;
 }
 $('#btnUsage').onclick = ()=>{ $('#uBody').innerHTML=''; $('#dlgUsage').showModal(); renderUsage() };
