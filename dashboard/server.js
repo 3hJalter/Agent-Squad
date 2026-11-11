@@ -448,7 +448,7 @@ on('GET', /^\/api\/state$/, async (req, res, _m, url) => {
   try { workersTxt = fs.readFileSync(path.join(ctx.root, '.agents', 'workers.txt'), 'utf8'); } catch { /* chưa start */ }
   send(res, 200, {
     project: { id: ctx.id, name: ctx.name, path: ctx.root }, session: ctx.session,
-    ...(await sessionInfo(ctx)), chat: chat.info(ctx), tasks: listTasks(ctx), workersTxt, hierarchy: readHierarchy(ctx), ...(await scaffoldState(ctx.root)),
+    ...(await sessionInfo(ctx)), chat: chat.info(ctx), requests: chat.listRequests(ctx), tasks: listTasks(ctx), workersTxt, hierarchy: readHierarchy(ctx), ...(await scaffoldState(ctx.root)),
   });
 });
 

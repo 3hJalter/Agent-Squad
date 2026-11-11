@@ -25,9 +25,21 @@ button.primary{background:var(--accent);border-color:var(--accent);color:var(--a
 button.danger{color:var(--blocked)}
 button.small{padding:2px 8px;font-size:12px}
 input,select,textarea{padding:5px 8px;border:1px solid var(--line);border-radius:6px;background:var(--bg)}
-main{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.15fr);gap:14px;padding:14px 16px;height:calc(100vh - 54px - var(--bannerH,0px))}
-@media (max-width:900px){main{grid-template-columns:1fr;height:auto}}
+main{display:grid;grid-template-columns:minmax(260px,330px) minmax(0,1fr);gap:14px;padding:14px 16px;height:calc(100vh - 54px - var(--bannerH,0px))}
+main.wide{grid-template-columns:minmax(0,1fr) minmax(0,1.15fr)}
+main.notasks{grid-template-columns:minmax(0,1fr)}
+main.notasks #secTasks{display:none}
+main:not(.wide) .board{grid-template-columns:minmax(0,1fr)!important;align-content:start;gap:12px}
+main:not(.wide) .col h3{position:sticky;top:-10px;background:var(--panel);padding:4px 0;margin:0 0 6px;z-index:1}
+main:not(.wide) .col .empty{display:none}
+#btnShowTasks{position:relative}
+#btnShowTasks .n{font-size:11px;color:var(--muted);margin-left:4px}
+.reqs{display:grid;gap:6px;padding:8px;border-bottom:1px solid var(--line);background:color-mix(in srgb,var(--prog) 8%,var(--panel))}
+.req{display:grid;gap:4px;font-size:13px}
+.req .row{gap:6px}
+@media (max-width:900px){main,main.wide{grid-template-columns:1fr;height:auto}}
 section{background:var(--panel);border:1px solid var(--line);border-radius:10px;display:flex;flex-direction:column;min-height:0}
+section>h2 button{white-space:nowrap}
 section>h2{font-size:14px;margin:0;padding:10px 12px;border-bottom:1px solid var(--line);display:flex;gap:8px;align-items:center}
 .board{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;padding:10px;overflow:auto;flex:1}
 @media (max-width:600px){.board{grid-template-columns:1fr 1fr}}
@@ -147,13 +159,14 @@ details.adv summary{padding:4px 10px 8px;font-size:12px;color:var(--muted);curso
 <div id="banner" class="banner" hidden></div>
 
 <main>
-  <section>
-    <h2>Tasks <select id="catSel" hidden title="Lọc theo nhóm (Category)"></select><span class="spacer"></span><button id="btnCleanup" class="small" hidden title="Chuyển các task đã xong vào thư mục lưu trữ">🧹 Dọn task đã xong</button><button id="btnNew" class="primary small">+ Việc mới</button></h2>
+  <section id="secTasks">
+    <h2>Tasks <button id="btnWide" class="small" title="Đổi giữa danh sách gọn và bảng rộng nhiều cột">⇔</button><button id="btnHideTasks" class="small" title="Ẩn khung task để chat rộng hơn">✕</button><select id="catSel" hidden title="Lọc theo nhóm (Category)"></select><span class="spacer"></span><button id="btnCleanup" class="small" hidden title="Chuyển các task đã xong vào thư mục lưu trữ">🧹 Dọn</button><button id="btnNew" class="primary small">+ Việc mới</button></h2>
     <div class="board" id="board"></div>
   </section>
 
   <section>
-    <h2><span class="tabs" id="tabs"></span><span class="spacer"></span><span id="agentStatus" class="pill"></span><button id="btnClearChat" class="small" title="Xoá nội dung chat của agent đang chọn">🗑 Xoá chat</button></h2>
+    <h2><span class="tabs" id="tabs"></span><span class="spacer"></span><button id="btnShowTasks" class="small" hidden title="Hiện lại khung task">📋 Tasks<span class="n" id="taskCount"></span></button><span id="agentStatus" class="pill"></span><button id="btnClearChat" class="small" title="Xoá nội dung chat của agent đang chọn">🗑 Xoá chat</button></h2>
+    <div class="reqs" id="reqs" hidden></div>
     <div class="termwrap">
       <pre class="term" id="term"></pre>
       <div class="chatlog" id="chatlog" hidden></div>
@@ -469,6 +482,30 @@ function workers(){
 }
 function fillWorkers(sel, pick){sel.innerHTML = workers().map(w=>`<option${w===pick?' selected':''}>${esc(w)}</option>`).join('')}
 
+// bố cục khung task: gọn (mặc định) / rộng / ẩn
+function applyLayout(){
+  const v = localGet('layout') || 'narrow', m = document.querySelector('main');
+  m.classList.toggle('wide', v==='wide'); m.classList.toggle('notasks', v==='hidden');
+  $('#btnShowTasks').hidden = v!=='hidden';
+}
+$('#btnWide').onclick = ()=>{ localSet('layout', (localGet('layout')||'narrow')==='wide' ? 'narrow' : 'wide'); applyLayout() };
+$('#btnHideTasks').onclick = ()=>{ localSet('layoutPrev', localGet('layout')||'narrow'); localSet('layout','hidden'); applyLayout() };
+$('#btnShowTasks').onclick = ()=>{ localSet('layout', localGet('layoutPrev')||'narrow'); applyLayout() };
+applyLayout();
+
+// agent xin tạo agent cấp dưới: bạn xác nhận ở đây
+function renderReqs(){
+  const list = state?.requests || [], box = $('#reqs');
+  box.hidden = !list.length;
+  box.innerHTML = list.map(r=>`<div class="req"><div>🧩 <b>${esc(r.parent)}</b>${r.parentInfo?` <span class="hint">(${esc(r.parentInfo)})</span>`:''} xin tạo agent cấp dưới <b>${esc(r.name)}</b>: ${esc(r.agent)}${r.model?', model '+esc(r.model):', model mặc định'}${r.effort?', effort '+esc(r.effort):''}</div>
+    ${r.reason?`<div class="hint">Lý do: ${esc(r.reason)}</div>`:''}${r.problem?`<div class="hint" style="color:var(--blocked)">Không tạo được: ${esc(r.problem)}</div>`:''}
+    <div class="row">${r.problem?'':`<button class="small primary" data-req="${esc(r.id)}" data-do="approve">Cho phép tạo</button>`}<button class="small" data-req="${esc(r.id)}" data-do="deny">Từ chối</button></div></div>`).join('');
+}
+$('#reqs').addEventListener('click',async e=>{
+  const b=e.target.closest('[data-req]'); if(!b) return; b.disabled=true;
+  try{await api('POST',`/api/requests/${encodeURIComponent(b.dataset.req)}/${b.dataset.do}`); toast(b.dataset.do==='approve'?'Đã tạo agent mới':'Đã từ chối','ok'); await refreshState()}catch(x){toast(x.message,'err'); b.disabled=false}
+});
+
 const NOCAT = '(chưa phân nhóm)';
 const catOf = (t)=> t.category || NOCAT;
 function renderCatSel(){
@@ -498,6 +535,7 @@ function renderBoard(){
   for(const t of state.tasks){ if(cat && catOf(t)!==cat) continue; (by[t.status] || by['todo']).push(t)}
   const cols = COLS.filter(([k])=>k!=='ready' || by.ready.length);
   $('#board').style.gridTemplateColumns = `repeat(${cols.length},minmax(0,1fr))`;
+  const open = state.tasks.filter(t=>t.status!=='done').length; $('#taskCount').textContent = open ? ` ${open}` : '';
   $('#board').innerHTML = cols.map(([k,label])=>`<div class="col"><h3>${label} <span>${by[k].length}</span></h3>${
     colHtml(by[k], k)
   }</div>`).join('');
@@ -577,7 +615,7 @@ async function refreshState(){
     $('#sdot').classList.toggle('on', isRunning());
     $('#stext').textContent = chatOn() ? `đang chạy (chat) · ${state.chat.agents.length} agent` : state.running ? `đang chạy (terminal) · ${state.windows.length} window` : `chưa chạy`;
     $('#stext').parentElement.title = state.project.path + ' · phiên tmux ' + state.session;
-    renderBoard(); renderTabs(); notifyChanges(); renderBanner();
+    renderBoard(); renderTabs(); notifyChanges(); renderBanner(); renderReqs();
     $('#btnCleanup').hidden = !state.tasks.some(t=>t.status==='done'); $('#btnClearChat').hidden = !isRunning();
   }catch(e){$('#stext').textContent='mất kết nối tới server'; $('#sdot').classList.remove('on')}
 }

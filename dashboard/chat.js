@@ -49,15 +49,23 @@ function prefixesOf(cmd) {
   return out;
 }
 
+// Trả lời gọn: không kể lể từng bước, chỉ báo khi xong / bị chặn / cần hỏi.
+const TERSE = ' REPORTING STYLE: do not narrate what you are about to do or are doing. Work silently, then send ONE final message of at most 4 short lines, ' +
+  'only when you are finished (what changed + check result), blocked (what blocks you + what you need), or must ask a question (the question only). No preambles, no recaps of the task.';
 const LEAD_ROLE = 'You are the LEAD of Agent-Squad, chatting with the human through a web dashboard (chat mode, no tmux). ' +
   'Follow the LEAD rules in CLAUDE.md and the shared rules in AGENTS.md. Workers are listed in .agents/workers.txt. ' +
   'To assign a task, set "Owner: <worker>" and "Status: ready" in the task file; the dashboard starts the worker and tells you when it is done. ' +
   'Do not run scripts/assign.sh or tmux. If a command or tool is blocked, say in one plain sentence what you need and why: ' +
   'the human sees an "Allow" button and you will be told when it is granted. ' +
-  'Reply in the human\'s language, short and in plain words.';
+  'Reply in the human\'s language, short and in plain words.' + TERSE;
+// Xin tạo agent cấp dưới: agent viết file yêu cầu, người dùng bấm xác nhận trên dashboard.
+const helperHint = (name, agentsDir) => ` HELPERS: if the work clearly needs a helper below you, create the file ${agentsDir}/requests/<helper-name>.md with these lines: ` +
+  `"Name: <helper-name>" (letters, digits, - only), "Agent: claude|codex|gemini", "Model: <model>" (pick a cheaper/weaker model than your own; a helper is for simpler sub-tasks), ` +
+  `"Effort: low|medium|high" (optional), "Parent: ${name}", "Reason: <one line>", "Status: pending". Then say so in one line and stop: the human must confirm. ` +
+  `After approval you assign tasks to the helper by writing task files with "Created by: ${name}", "Owner: <helper-name>", "Status: ready".`;
 const GRANT_RE = /^(network|[A-Za-z_][A-Za-z0-9_]{0,40}(\([^\n]{1,300}\))?)$/;
 const workerRole = (name, agentsDir) => `You are a WORKER named "${name}" (chat mode, no tmux), not the lead: ignore the LEAD rules in CLAUDE.md ` +
-  'and follow the worker rules in AGENTS.md. Be terse.' +
+  'and follow the worker rules in AGENTS.md.' + TERSE +
   (agentsDir ? ` Your worktree has no .agents folder: wherever the rules or messages say ".agents/", use ${agentsDir}/ instead.` +
     ' Your sandbox cannot write .git: never run git merge/commit/add/stash/checkout; the dashboard merges before each task and commits after each turn.' : '');
 // Codex chặn mọi lệnh khi .agents trong worktree là symlink ("crosses a writable symlink"), nên worker
@@ -111,7 +119,8 @@ module.exports = function setupChat({ on, send, readBody, getCtx, loadProjects, 
     const extraDir = path.join(ctx.root, '.agents');
     if (a.agent === 'claude') {
       const args = ['-p', '--output-format', 'stream-json', '--verbose', '--permission-mode', 'acceptEdits',
-        '--allowedTools', ...CLAUDE_TOOLS, ...tools, '--add-dir', extraDir,        '--append-system-prompt', lead ? LEAD_ROLE : workerRole(name)];
+        '--allowedTools', ...CLAUDE_TOOLS, ...tools, '--add-dir', extraDir,
+        '--append-system-prompt', (lead ? LEAD_ROLE : workerRole(name)) + helperHint(name, extraDir)];
       if (a.model) args.push('--model', a.model);
       if (a.effort) args.push('--effort', a.effort);
       if (session) args.push('--resume', session);
@@ -119,7 +128,7 @@ module.exports = function setupChat({ on, send, readBody, getCtx, loadProjects, 
       if (deny.length) args.push('--disallowedTools', ...deny);
       return { cmd: 'claude', args, stdin: prompt };
     }
-    const first = session ? prompt : (lead ? LEAD_ROLE : workerRole(name, noLink(a) && extraDir)) + '\n\n' + prompt;
+    const first = session ? prompt : (lead ? LEAD_ROLE : workerRole(name, noLink(a) && extraDir)) + helperHint(name, extraDir) + '\n\n' + prompt;
     if (a.agent === 'codex') {
       const args = ['exec', '--json', '-s', 'workspace-write', '--add-dir', extraDir];
       if (a.gitDir) args.push('--add-dir', a.gitDir);
@@ -155,6 +164,14 @@ module.exports = function setupChat({ on, send, readBody, getCtx, loadProjects, 
   function makeParser(agent, msg, onSession) {
     const steps = msg.steps;
     const byId = new Map();
+    // lời agent nói giữa chừng (trước khi chạy công cụ) chuyển vào danh sách bước; tin nhắn chỉ giữ câu trả lời cuối
+    const stash = () => {
+      const t = msg.text.trim();
+      if (!t) return;
+      const line = t.split('\n')[0];
+      steps.push({ icon: '💬', title: short(line, 160), ...(t.length > line.length ? { detail: short(t, 1200) } : {}) });
+      msg.text = '';
+    };
     const want = (g, label) => {
       if (!GRANT_RE.test(g)) return;
       msg.grants = msg.grants || [];
@@ -165,7 +182,7 @@ module.exports = function setupChat({ on, send, readBody, getCtx, loadProjects, 
         if (ev.type === 'system' && ev.subtype === 'init' && ev.session_id) onSession(ev.session_id);
         if (ev.type === 'assistant') for (const c of ev.message?.content || []) {
           if (c.type === 'text' && c.text.trim()) msg.text += (msg.text ? '\n\n' : '') + c.text.trim();
-          if (c.type === 'tool_use') { const s = toolStep(c.name, c.input); byId.set(c.id, s); steps.push(s); }
+          if (c.type === 'tool_use') { stash(); const s = toolStep(c.name, c.input); byId.set(c.id, s); steps.push(s); }
         }
         if (ev.type === 'user') for (const c of ev.message?.content || []) {
           const s = c.type === 'tool_result' && byId.get(c.tool_use_id);
@@ -196,7 +213,7 @@ module.exports = function setupChat({ on, send, readBody, getCtx, loadProjects, 
           let s = byId.get(it.id);
           if (it.type === 'agent_message' && ev.type === 'item.completed' && it.text) msg.text += (msg.text ? '\n\n' : '') + it.text.trim();
           if (it.type === 'command_execution') {
-            if (!s) { s = { icon: '▶', title: 'Chạy lệnh', detail: short(it.command, 400) }; byId.set(it.id, s); steps.push(s); }
+            if (!s) { stash(); s = { icon: '▶', title: 'Chạy lệnh', detail: short(it.command, 400) }; byId.set(it.id, s); steps.push(s); }
             if (ev.type === 'item.completed' && it.exit_code) {
               s.error = true; s.detail = short(`${it.command}\n${it.aggregated_output || ''}`);
               if (/network|resolve host|could not resolve|connection (refused|reset)|timed out|ENOTFOUND|EAI_AGAIN|sandbox|operation not permitted/i.test(it.aggregated_output || '')) {
@@ -205,6 +222,7 @@ module.exports = function setupChat({ on, send, readBody, getCtx, loadProjects, 
             }
           }
           if (it.type === 'file_change' && !s) {
+            stash();
             s = { icon: '✏️', title: 'Sửa ' + (it.changes || []).map((c) => c.path).join(', ') }; byId.set(it.id, s); steps.push(s);
           }
           if (it.type === 'error' && it.message) msg.error = short(it.message, 600);
@@ -218,7 +236,7 @@ module.exports = function setupChat({ on, send, readBody, getCtx, loadProjects, 
           const s = toolStep(ev.tool_name, ev.parameters);
           Object.defineProperty(s, 'tool', { value: ev.tool_name, enumerable: false });
           if (ev.tool_name === 'run_shell_command') Object.defineProperty(s, 'cmd', { value: ev.parameters?.command, enumerable: false });
-          byId.set(ev.tool_id, s); steps.push(s);
+          stash(); byId.set(ev.tool_id, s); steps.push(s);
         }
         if (ev.type === 'tool_result') {
           const s = byId.get(ev.tool_id);
@@ -326,6 +344,84 @@ module.exports = function setupChat({ on, send, readBody, getCtx, loadProjects, 
   // ------------------------------------------------------------ khởi động / dừng
   const winName = (a) => { const m = (a.model || '').replace(/[^A-Za-z0-9_-]/g, '-'); return !m ? a.agent : m.startsWith(a.agent) ? m : `${a.agent}-${m}`; };
 
+  // tạo worktree + nhánh agent/<name> cho một worker và ghi vào st.agents; trả về dòng cho workers.txt
+  async function addWorker(ctx, st, name, w, gitDir) {
+    const wt = path.resolve(ctx.root, '..', `${path.basename(ctx.root)}-${name}`);
+    if (!fs.existsSync(wt)) {
+      let r = await run('git', ['-C', ctx.root, 'worktree', 'add', wt, '-b', `agent/${name}`]);
+      if (!r.ok) r = await run('git', ['-C', ctx.root, 'worktree', 'add', wt, `agent/${name}`]);
+      if (!r.ok) throw new Error(`Không tạo được worktree cho ${name}: ${r.err.trim()}`);
+    }
+    const link = path.join(wt, '.agents');
+    let isRealDir = false;
+    try { isRealDir = fs.lstatSync(link).isDirectory(); } catch { /* chưa có */ }
+    if (!isRealDir) {
+      fs.rmSync(link, { force: true });
+      if (!noLink(w)) fs.symlinkSync(path.join(ctx.root, '.agents'), link);
+    }
+    st.agents[name] = { agent: w.agent, model: w.model || '', effort: w.effort || '', ...(w.helper ? { helper: true } : {}), cwd: wt, gitDir };
+    return `${name}  (${w.agent}${w.model ? ', model ' + w.model : ''}${w.effort ? ', effort ' + w.effort : ''})`;
+  }
+
+  // ------------------------------------------------------------ agent xin tạo agent cấp dưới
+  const reqDir = (ctx) => path.join(ctx.root, '.agents', 'requests');
+  function listRequests(ctx) {
+    let files = [];
+    try { files = fs.readdirSync(reqDir(ctx)).filter((f) => /^[A-Za-z0-9_-]{1,30}\.md$/.test(f)); } catch { return []; }
+    const st = loadState(ctx);
+    const out = [];
+    for (const f of files) {
+      let text;
+      try { text = fs.readFileSync(path.join(reqDir(ctx), f), 'utf8'); } catch { continue; }
+      if (field(text, 'Status').toLowerCase() !== 'pending') continue;
+      const r = { id: f.slice(0, -3), name: field(text, 'Name') || f.slice(0, -3), agent: field(text, 'Agent').toLowerCase(), model: field(text, 'Model'),
+        effort: field(text, 'Effort').toLowerCase(), parent: field(text, 'Parent') || 'lead', reason: field(text, 'Reason').slice(0, 300) };
+      const p = st.agents?.[r.parent];
+      r.parentInfo = p ? `${p.agent}${p.model ? ' ' + p.model : ''}` : '';
+      r.problem = !/^[A-Za-z0-9_-]{1,30}$/.test(r.name) || r.name === 'lead' || r.name === 'watch' ? 'tên không hợp lệ'
+        : st.agents?.[r.name] ? 'đã có agent tên này'
+          : !['claude', 'codex', 'gemini'].includes(r.agent) ? 'agent phải là claude, codex hoặc gemini'
+            : !/^[A-Za-z0-9._:/-]{0,64}$/.test(r.model) || !/^[a-z]{0,12}$/.test(r.effort) ? 'model hoặc effort không hợp lệ'
+              : !p ? `không có agent cấp trên "${r.parent}"` : '';
+      out.push(r);
+    }
+    return out;
+  }
+  function setRequestStatus(ctx, id, status) {
+    const f = path.join(reqDir(ctx), id + '.md');
+    const text = fs.readFileSync(f, 'utf8');
+    fs.writeFileSync(f, /^Status:/m.test(text) ? text.replace(/^Status:.*$/m, 'Status: ' + status) : text + '\nStatus: ' + status + '\n');
+  }
+  on('POST', /^\/api\/requests\/([^/]+)\/(approve|deny)$/, async (req, res, m, url) => {
+    const [id, what] = m; const ctx = getCtx(url);
+    const r = listRequests(ctx).find((x) => x.id === id);
+    if (!r) return send(res, 404, { error: 'Không còn yêu cầu này' });
+    const st = loadState(ctx);
+    const tell = (text, show) => { if (st.agents[r.parent]) enqueue(ctx, r.parent, text, { role: 'system', text: show }); };
+    if (what === 'deny') {
+      setRequestStatus(ctx, id, 'denied');
+      tell(`The human DENIED your request for helper "${r.name}". Continue without it, or explain in one line why it is really needed.`, `🚫 Bạn đã từ chối tạo agent "${r.name}".`);
+      return send(res, 200, { ok: true });
+    }
+    if (r.problem) return send(res, 400, { error: 'Yêu cầu không hợp lệ: ' + r.problem });
+    if (!st.active) return send(res, 400, { error: 'Chưa Start agents ở chế độ chat.' });
+    const common = await run('git', ['-C', ctx.root, 'rev-parse', '--path-format=absolute', '--git-common-dir']);
+    let line;
+    try { line = await addWorker(ctx, st, r.name, { agent: r.agent, model: r.model, effort: r.effort, helper: true }, common.ok ? common.out.trim() : path.join(ctx.root, '.git')); }
+    catch (e) { return send(res, 500, { error: e.message }); }
+    saveState(ctx, st);
+    fs.appendFileSync(path.join(ctx.root, '.agents', 'workers.txt'), line + '\n');
+    const hf = path.join(ctx.root, '.agents', 'hierarchy.txt');
+    let h = '';
+    try { h = fs.readFileSync(hf, 'utf8'); } catch { /* chưa có */ }
+    h = h.split(/\r?\n/).filter((l) => !new RegExp('^\\s*' + r.name + '\\s*<-').test(l)).join('\n').replace(/\n*$/, '\n');
+    fs.writeFileSync(hf, (h.trim() ? h : '') + `${r.name} <- ${r.parent}\n`);
+    setRequestStatus(ctx, id, 'approved');
+    tell(`The human APPROVED helper "${r.name}" (${r.agent}${r.model ? ' ' + r.model : ''}). It is now your direct report: assign it tasks by writing task files with "Created by: ${r.parent}", "Owner: ${r.name}", "Status: ready". Keep its tasks small and simple. Continue your work.`,
+      `✅ Bạn đã cho phép tạo agent "${r.name}" (${r.agent}${r.model ? ', ' + r.model : ''}) dưới quyền ${r.parent}.`);
+    send(res, 200, { ok: true });
+  });
+
   async function start(ctx, lead, workers) {
     const head = await run('git', ['-C', ctx.root, 'rev-parse', 'HEAD']);
     if (!head.ok) throw new Error('Repo chưa có commit nào. Hãy commit trước (nút ở thanh cảnh báo).');
@@ -339,21 +435,12 @@ module.exports = function setupChat({ on, send, readBody, getCtx, loadProjects, 
     for (const w of workers) {
       const name = w.name || winName(w);
       if (st.agents[name] || name === 'lead') continue;
-      const wt = path.resolve(ctx.root, '..', `${repoName}-${name}`);
-      if (!fs.existsSync(wt)) {
-        let r = await run('git', ['-C', ctx.root, 'worktree', 'add', wt, '-b', `agent/${name}`]);
-        if (!r.ok) r = await run('git', ['-C', ctx.root, 'worktree', 'add', wt, `agent/${name}`]);
-        if (!r.ok) throw new Error(`Không tạo được worktree cho ${name}: ${r.err.trim()}`);
-      }
-      const link = path.join(wt, '.agents');
-      let isRealDir = false;
-      try { isRealDir = fs.lstatSync(link).isDirectory(); } catch { /* chưa có */ }
-      if (!isRealDir) {
-        fs.rmSync(link, { force: true });
-        if (!noLink(w)) fs.symlinkSync(path.join(ctx.root, '.agents'), link);
-      }
-      st.agents[name] = { ...w, cwd: wt, gitDir };
-      lines.push(`${name}  (${w.agent}${w.model ? ', model ' + w.model : ''}${w.effort ? ', effort ' + w.effort : ''})`);
+      lines.push(await addWorker(ctx, st, name, w, gitDir));
+    }
+    // agent cấp dưới đã được duyệt trước đó (có dòng trong hierarchy.txt) thì giữ lại
+    for (const [n, o] of Object.entries(old)) {
+      if (!o.helper || st.agents[n] || !st.agents[parentOf(ctx, n)]) continue;
+      lines.push(await addWorker(ctx, st, n, o, gitDir));
     }
     // đổi agent/model thì bắt đầu cuộc trò chuyện mới cho agent đó
     for (const n of Object.keys(st.sessions || {})) {
@@ -546,5 +633,5 @@ module.exports = function setupChat({ on, send, readBody, getCtx, loadProjects, 
   }
   const busyCount = () => [...live.values()].filter((L) => L.child).length;
 
-  return { start, stopAll, info, killAll, busyCount, isActive: (ctx) => !!loadState(ctx).active };
+  return { start, stopAll, info, listRequests, killAll, busyCount, isActive: (ctx) => !!loadState(ctx).active };
 };
