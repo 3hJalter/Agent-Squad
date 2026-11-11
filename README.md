@@ -36,6 +36,13 @@ Nâng cấp chính Agent-Squad bằng agent: chọn project Agent-Squad trên da
     Agent được dặn chỉ báo ngắn gọn khi xong / bị chặn / cần hỏi; lời nói giữa chừng nằm trong mục "bước đã làm".
     Agent có thể xin tạo agent cấp dưới (file `.agents/requests/<tên>.md`); dashboard hiện thẻ để bạn "Cho phép tạo" hoặc "Từ chối",
     agent mới được ghi vào `.agents/hierarchy.txt` dưới quyền agent đã xin.
+    Ảnh và file: dán, kéo thả hoặc đính kèm vào ô nhắn (lưu ở `.agents/uploads/`, tối đa 20 MB); ảnh và file agent nhắc tới
+    hoặc vừa sửa hiện ngay trong chat, bấm để xem hoặc tải về (chỉ mở được file trong project).
+  - **🌳 Agents**: xem cây phân cấp, kéo thả để đổi cấp trên (ghi vào `.agents/hierarchy.txt`); ở kiểu Chat còn thêm,
+    đổi tên, đổi model/effort và xoá agent (cấp dưới chuyển lên cấp trên, task đang giữ về Todo, worktree được giữ lại).
+  - **📊 Token**: số token mỗi agent đã dùng và tỉ lệ % theo Claude / Codex / Gemini (kiểu Chat, lưu ở `.agents/chat/usage.json`).
+  - **🔔 Báo**: tiếng và thông báo trình duyệt khi task xong, bị chặn, agent cần quyền hoặc Lead trả lời xong.
+  - Kéo thanh giữa khung task và chat để đổi độ rộng, kéo thanh trên ô nhắn để đổi chiều cao (bấm đúp để về mặc định).
   - **🖥 Terminal**: như cũ, mỗi agent một window tmux, dashboard hiện màn hình terminal.
 
 Chạy (trong WSL2/Linux, đã cài tmux, claude, codex):

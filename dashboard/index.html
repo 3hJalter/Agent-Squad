@@ -25,10 +25,16 @@ button.primary{background:var(--accent);border-color:var(--accent);color:var(--a
 button.danger{color:var(--blocked)}
 button.small{padding:2px 8px;font-size:12px}
 input,select,textarea{padding:5px 8px;border:1px solid var(--line);border-radius:6px;background:var(--bg)}
-main{display:grid;grid-template-columns:minmax(260px,330px) minmax(0,1fr);gap:14px;padding:14px 16px;height:calc(100vh - 54px - var(--bannerH,0px))}
-main.wide{grid-template-columns:minmax(0,1fr) minmax(0,1.15fr)}
+main{display:grid;grid-template-columns:var(--taskW,330px) 14px minmax(0,1fr);gap:0;padding:14px 16px;height:calc(100vh - 54px - var(--bannerH,0px))}
 main.notasks{grid-template-columns:minmax(0,1fr)}
-main.notasks #secTasks{display:none}
+main.notasks #secTasks,main.notasks #split{display:none}
+#split{cursor:col-resize;position:relative;touch-action:none}
+#split::after{content:'';position:absolute;left:5px;top:35%;bottom:35%;width:4px;border-radius:2px;background:var(--line)}
+#split:hover::after,#split.drag::after{top:8%;bottom:8%;background:var(--accent)}
+#hsplit{height:9px;cursor:row-resize;border-top:1px solid var(--line);position:relative;touch-action:none;flex:none}
+#hsplit::after{content:'';position:absolute;left:calc(50% - 18px);top:3px;width:36px;height:3px;border-radius:2px;background:var(--line)}
+#hsplit:hover::after,#hsplit.drag::after{background:var(--accent)}
+body.dragging{user-select:none}
 main:not(.wide) .board{grid-template-columns:minmax(0,1fr)!important;align-content:start;gap:12px}
 main:not(.wide) .col h3{position:sticky;top:-10px;background:var(--panel);padding:4px 0;margin:0 0 6px;z-index:1}
 main:not(.wide) .col .empty{display:none}
@@ -37,7 +43,7 @@ main:not(.wide) .col .empty{display:none}
 .reqs{display:grid;gap:6px;padding:8px;border-bottom:1px solid var(--line);background:color-mix(in srgb,var(--prog) 8%,var(--panel))}
 .req{display:grid;gap:4px;font-size:13px}
 .req .row{gap:6px}
-@media (max-width:900px){main,main.wide{grid-template-columns:1fr;height:auto}}
+@media (max-width:900px){main{grid-template-columns:1fr;height:auto;gap:14px}#split{display:none}}
 section{background:var(--panel);border:1px solid var(--line);border-radius:10px;display:flex;flex-direction:column;min-height:0}
 section>h2 button{white-space:nowrap}
 section>h2{font-size:14px;margin:0;padding:10px 12px;border-bottom:1px solid var(--line);display:flex;gap:8px;align-items:center}
@@ -60,8 +66,8 @@ section>h2{font-size:14px;margin:0;padding:10px 12px;border-bottom:1px solid var
 .tab{padding:3px 10px;border-radius:6px;font-size:13px}
 .tab.sel{background:var(--accent);color:var(--accent-text);border-color:var(--accent)}
 pre.term{flex:1;margin:0;padding:10px 12px;background:var(--term);color:var(--term-text);overflow:auto;font:12.5px/1.35 ui-monospace,Consolas,monospace;white-space:pre-wrap;word-break:break-word;min-height:200px}
-.sendbar{display:flex;gap:6px;padding:8px;border-top:1px solid var(--line);flex-wrap:wrap}
-.sendbar textarea{flex:1;min-width:200px;resize:vertical;height:38px}
+.sendbar{display:flex;gap:6px;padding:2px 8px 8px;flex-wrap:wrap;align-items:flex-end}
+.sendbar textarea{flex:1;min-width:200px;resize:none;height:38px}
 .keys{display:flex;gap:4px;flex-wrap:wrap;padding:0 8px 8px}
 dialog{border:1px solid var(--line);border-radius:10px;background:var(--panel);color:var(--text);width:min(760px,94vw);padding:0}
 dialog::backdrop{background:rgba(0,0,0,.45)}
@@ -139,6 +145,36 @@ details.adv summary{padding:4px 10px 8px;font-size:12px;color:var(--muted);curso
 .grant ul{margin:0;padding-left:18px}.grant .row{gap:6px}
 .chatempty{margin:auto;text-align:center;color:var(--muted);max-width:420px}
 .chatempty b{display:block;color:var(--text);font-size:15px;margin-bottom:6px}
+.tab .need{display:inline-block;margin-left:6px;padding:0 5px;border-radius:99px;background:var(--blocked);color:#fff;font-size:11px;font-weight:700}
+.badge{display:inline-block;margin-left:4px;padding:0 6px;border-radius:99px;background:var(--blocked);color:#fff;font-size:11px;font-weight:700}
+.atts{display:flex;flex-wrap:wrap;gap:6px;margin-top:6px;white-space:normal}
+.atts img{max-width:min(320px,100%);max-height:220px;border-radius:8px;border:1px solid var(--line);cursor:zoom-in;background:#fff;display:block}
+.filecard{display:inline-flex;gap:6px;align-items:center;max-width:100%;font-size:12.5px;padding:4px 10px;border-radius:8px;background:var(--bg);color:var(--text);text-align:left}
+.filecard b{font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#dlgFile{width:min(1000px,96vw)}
+#dfBody{max-height:76vh;overflow:auto}
+#dfBody img{max-width:100%;height:auto;display:block;margin:auto;background:#fff}
+#dfBody pre{margin:0;padding:10px 12px;background:var(--term);color:var(--term-text);border-radius:6px;font:12.5px/1.4 ui-monospace,Consolas,monospace;white-space:pre-wrap;word-break:break-word}
+a.btn{padding:2px 8px;font-size:12px;border-radius:6px;border:1px solid var(--line);color:inherit;text-decoration:none}
+a.btn:hover{border-color:var(--accent)}
+.agrow{display:flex;gap:8px;align-items:center;flex-wrap:wrap;border:1px solid var(--line);border-radius:8px;padding:6px 8px;background:var(--bg)}
+.agrow[draggable=true] .grip{cursor:grab;color:var(--muted)}
+.agrow.over{border-color:var(--accent);outline:2px dashed var(--accent)}
+.agrow.dragged{opacity:.45}
+.agedit{display:flex;gap:8px;align-items:end;flex-wrap:wrap;border:1px dashed var(--line);border-radius:8px;padding:8px}
+.agedit label,.agadd label{display:grid;gap:3px;font-size:12px;color:var(--muted)}
+.agadd{display:flex;gap:8px;align-items:end;flex-wrap:wrap}
+#agTree{display:grid;gap:6px}
+.utot{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}
+@media (max-width:600px){.utot{grid-template-columns:1fr}}
+.ucard{border:1px solid var(--line);border-radius:8px;padding:8px 10px;display:grid;gap:4px;background:var(--bg)}
+.ucard .big{font-size:20px;font-weight:700;color:var(--text)}
+.bar{height:6px;border-radius:3px;background:var(--line);overflow:hidden}
+.bar i{display:block;height:100%;background:var(--accent)}
+.bar.claude i{background:#d97757}.bar.codex i{background:#10a37f}.bar.gemini i{background:#4c8df6}
+.utable{display:grid;grid-template-columns:minmax(90px,1.2fr) minmax(110px,1.6fr) 50px 76px 76px 76px minmax(90px,1fr);gap:6px 10px;align-items:center;font-size:13px}
+.utable .h{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em}
+.utable .r{text-align:right;font-variant-numeric:tabular-nums}
 .tab .busy{display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--prog);margin-left:6px;animation:bl 1.2s infinite}
 </style>
 </head>
@@ -153,6 +189,9 @@ details.adv summary{padding:4px 10px 8px;font-size:12px;color:var(--muted);curso
   <button id="btnCfg">Chọn agent &amp; model</button>
   <button id="btnStart" class="primary">Start agents</button>
   <button id="btnStop" class="danger">Stop</button>
+  <button id="btnAgents" class="small" title="Xem và sửa cây phân cấp agent: ai là cấp trên của ai, thêm, đổi tên, đổi model, xoá agent">🌳 Agents<span id="agBadge" class="badge" hidden></span></button>
+  <button id="btnUsage" class="small" title="Số token mỗi agent đã dùng, chia theo Claude, Codex, Gemini">📊 Token</button>
+  <button id="btnNotify" class="small" title="Báo bằng tiếng và thông báo của trình duyệt khi agent xong, bị chặn hoặc cần bạn"></button>
   <button id="btnUpdate" class="small" title="Tải bản Agent-Squad mới nhất từ GitHub và khởi động lại dashboard">⟳ Cập nhật</button>
   <button id="btnRestart" class="small" title="Khởi động lại dashboard để dùng code mới trên máy (ví dụ sau khi gộp bản nâng cấp Agent-Squad)">↻ Khởi động lại</button>
 </header>
@@ -160,9 +199,10 @@ details.adv summary{padding:4px 10px 8px;font-size:12px;color:var(--muted);curso
 
 <main>
   <section id="secTasks">
-    <h2>Tasks <button id="btnWide" class="small" title="Đổi giữa danh sách gọn và bảng rộng nhiều cột">⇔</button><button id="btnHideTasks" class="small" title="Ẩn khung task để chat rộng hơn">✕</button><select id="catSel" hidden title="Lọc theo nhóm (Category)"></select><span class="spacer"></span><button id="btnCleanup" class="small" hidden title="Chuyển các task đã xong vào thư mục lưu trữ">🧹 Dọn</button><button id="btnNew" class="primary small">+ Việc mới</button></h2>
+    <h2>Tasks <button id="btnHideTasks" class="small" title="Ẩn khung task để chat rộng hơn">✕</button><select id="catSel" hidden title="Lọc theo nhóm (Category)"></select><span class="spacer"></span><button id="btnCleanup" class="small" hidden title="Chuyển các task đã xong vào thư mục lưu trữ">🧹 Dọn</button><button id="btnNew" class="primary small">+ Việc mới</button></h2>
     <div class="board" id="board"></div>
   </section>
+  <div id="split" title="Kéo để đổi độ rộng khung task và chat. Bấm đúp để về mặc định."></div>
 
   <section>
     <h2><span class="tabs" id="tabs"></span><span class="spacer"></span><button id="btnShowTasks" class="small" hidden title="Hiện lại khung task">📋 Tasks<span class="n" id="taskCount"></span></button><span id="agentStatus" class="pill"></span><button id="btnClearChat" class="small" title="Xoá nội dung chat của agent đang chọn">🗑 Xoá chat</button></h2>
@@ -174,6 +214,7 @@ details.adv summary{padding:4px 10px 8px;font-size:12px;color:var(--muted);curso
     </div>
     <div class="quick" id="quick" hidden></div>
     <div class="suggest" id="suggest"></div>
+    <div id="hsplit" title="Kéo lên xuống để đổi chiều cao ô nhắn. Bấm đúp để về mặc định."></div>
     <div class="sendbar">
       <button id="btnAttach" title="Đính kèm file (hoặc kéo thả / dán ảnh vào ô nhắn)">📎</button>
       <textarea id="msg" placeholder="Nhắn cho agent… (Enter để gửi, Shift+Enter xuống dòng, kéo thả hoặc dán ảnh/file vào đây)"></textarea>
@@ -280,6 +321,38 @@ details.adv summary{padding:4px 10px 8px;font-size:12px;color:var(--muted);curso
   </div>
 </dialog>
 
+<dialog id="dlgFile">
+  <div class="dlg-h"><h3 id="dfTitle"></h3><a id="dfDl" class="btn" download>⬇ Tải về</a><button id="dfClose" class="small">Đóng</button></div>
+  <div class="dlg-b"><div id="dfBody"></div><span class="hint" id="dfNote"></span></div>
+</dialog>
+
+<dialog id="dlgAgents">
+  <div class="dlg-h"><h3>🌳 Cây phân cấp agent</h3><button id="agClose" class="small">Đóng</button></div>
+  <div class="dlg-b">
+    <div id="agReqs" class="box" hidden></div>
+    <div id="agTree"></div>
+    <div class="box" id="agAddBox"><h4>➕ Thêm agent</h4>
+      <div class="agadd">
+        <label>Tên<input id="aaName" maxlength="30" placeholder="vd: tester" style="width:120px"></label>
+        <label>Agent<select id="aaAgent"></select></label>
+        <label>Model<input id="aaModel" list="aaModels" placeholder="mặc định" style="width:170px"><datalist id="aaModels"></datalist></label>
+        <label>Effort<select id="aaEffort"></select></label>
+        <label>Cấp trên<select id="aaParent"></select></label>
+        <button id="aaAdd" class="primary small">Thêm</button>
+      </div>
+    </div>
+    <p class="hint" style="margin:0" id="agHint"></p>
+  </div>
+</dialog>
+
+<dialog id="dlgUsage">
+  <div class="dlg-h"><h3>📊 Token đã dùng</h3>
+    <span class="seg" id="uRange"><button data-r="today">Hôm nay</button><button data-r="7">7 ngày</button><button data-r="all">Tất cả</button></span>
+    <button id="uClose" class="small">Đóng</button></div>
+  <div class="dlg-b"><div id="uBody"></div>
+    <p class="hint" style="margin:0">Chỉ tính các lượt agent chạy ở kiểu Chat của project này. "Vào" là token agent đọc (gồm cả phần lấy lại từ bộ nhớ đệm), "Ra" là token agent viết. Số do chính Claude, Codex, Gemini báo về sau mỗi lượt.</p></div>
+</dialog>
+
 <div id="toasts"></div>
 
 <script>
@@ -315,7 +388,7 @@ async function loadProjects(){
 function switchProject(id){
   proj = id; localSet('proj', id); state = null; lastStatus = null; win = localGet('win.'+id) || 'lead';
   cfg = loadCfg(); $('#cfgSummary').textContent = $('#cfgSummary').title = cfgSummaryText(); delete $('#term').dataset.seen;
-  attachments=[]; leadAttachments=[]; renderChips();
+  attachments=[]; leadAttachments=[]; renderChips(); prevSnap = null; applyLayout();
   refreshState().then(refreshPane);
 }
 $('#projSel').onchange = ()=>switchProject($('#projSel').value);
@@ -473,7 +546,7 @@ $('#cfgSaveStart').onclick = async()=>{if(saveCfg()){$('#dlgCfg').close(); if(is
 const chatOn = ()=> !!state?.chat?.active;
 const isRunning = ()=> !!(state && (state.running || chatOn()));
 function tabList(){
-  if(chatOn()) return state.chat.agents.map(a=>({name:a.name, busy:a.busy}));
+  if(chatOn()) return state.chat.agents.map(a=>({name:a.name, busy:a.busy, wants:a.wants}));
   return state.running ? state.windows : [];
 }
 function workers(){
@@ -482,29 +555,216 @@ function workers(){
 }
 function fillWorkers(sel, pick){sel.innerHTML = workers().map(w=>`<option${w===pick?' selected':''}>${esc(w)}</option>`).join('')}
 
-// bố cục khung task: gọn (mặc định) / rộng / ẩn
+// bố cục: kéo thanh giữa để đổi độ rộng khung task / chat, kéo thanh trên ô nhắn để đổi chiều cao; nhớ theo project
+const DEF_W = 330;
 function applyLayout(){
-  const v = localGet('layout') || 'narrow', m = document.querySelector('main');
-  m.classList.toggle('wide', v==='wide'); m.classList.toggle('notasks', v==='hidden');
-  $('#btnShowTasks').hidden = v!=='hidden';
+  const m = document.querySelector('main'), hidden = localGet('layout')==='hidden';
+  m.classList.toggle('notasks', hidden); $('#btnShowTasks').hidden = !hidden;
+  let w = +(localGet('split.'+proj) || localGet('split') || (localGet('layout')==='wide' ? Math.round(window.innerWidth*0.45) : DEF_W));
+  w = Math.max(220, Math.min(w, Math.max(220, window.innerWidth - 46 - 380)));
+  m.style.setProperty('--taskW', w+'px'); m.classList.toggle('wide', w>=620);
+  const h = Math.max(38, Math.min(+(localGet('msgH')||38), Math.round(window.innerHeight*0.6)));
+  $('#msg').style.height = h+'px';
 }
-$('#btnWide').onclick = ()=>{ localSet('layout', (localGet('layout')||'narrow')==='wide' ? 'narrow' : 'wide'); applyLayout() };
-$('#btnHideTasks').onclick = ()=>{ localSet('layoutPrev', localGet('layout')||'narrow'); localSet('layout','hidden'); applyLayout() };
-$('#btnShowTasks').onclick = ()=>{ localSet('layout', localGet('layoutPrev')||'narrow'); applyLayout() };
+function dragger(el, onMove){
+  el.addEventListener('pointerdown',e=>{
+    if(e.button) return; e.preventDefault(); el.setPointerCapture(e.pointerId); el.classList.add('drag'); document.body.classList.add('dragging');
+    const mv = ev=>onMove(ev);
+    const up = ()=>{ el.classList.remove('drag'); document.body.classList.remove('dragging'); el.removeEventListener('pointermove',mv); el.removeEventListener('pointerup',up); el.removeEventListener('pointercancel',up) };
+    el.addEventListener('pointermove',mv); el.addEventListener('pointerup',up); el.addEventListener('pointercancel',up);
+  });
+}
+dragger($('#split'), e=>{ const r = document.querySelector('main').getBoundingClientRect(); localSet('split.'+proj, Math.round(e.clientX - r.left - 16 - 7)); applyLayout() });
+$('#split').ondblclick = ()=>{ localSet('split.'+proj, DEF_W); applyLayout() };
+dragger($('#hsplit'), e=>{ const r = $('#msg').getBoundingClientRect(); localSet('msgH', Math.round(r.bottom - e.clientY - 6)); applyLayout() });
+$('#hsplit').ondblclick = ()=>{ localSet('msgH', 38); applyLayout() };
+window.addEventListener('resize', applyLayout);
+$('#btnHideTasks').onclick = ()=>{ localSet('layout','hidden'); applyLayout() };
+$('#btnShowTasks').onclick = ()=>{ localSet('layout','shown'); applyLayout() };
 applyLayout();
 
-// agent xin tạo agent cấp dưới: bạn xác nhận ở đây
-function renderReqs(){
-  const list = state?.requests || [], box = $('#reqs');
-  box.hidden = !list.length;
-  box.innerHTML = list.map(r=>`<div class="req"><div>🧩 <b>${esc(r.parent)}</b>${r.parentInfo?` <span class="hint">(${esc(r.parentInfo)})</span>`:''} xin tạo agent cấp dưới <b>${esc(r.name)}</b>: ${esc(r.agent)}${r.model?', model '+esc(r.model):', model mặc định'}${r.effort?', effort '+esc(r.effort):''}</div>
+// agent xin tạo agent cấp dưới: dòng nhắc phía trên chat, duyệt trong mục "🌳 Agents"
+function reqCards(){
+  return (state?.requests || []).map(r=>`<div class="req"><div>🧩 <b>${esc(r.parent)}</b>${r.parentInfo?` <span class="hint">(${esc(r.parentInfo)})</span>`:''} xin tạo agent cấp dưới <b>${esc(r.name)}</b>: ${esc(r.agent)}${r.model?', model '+esc(r.model):', model mặc định'}${r.effort?', effort '+esc(r.effort):''}</div>
     ${r.reason?`<div class="hint">Lý do: ${esc(r.reason)}</div>`:''}${r.problem?`<div class="hint" style="color:var(--blocked)">Không tạo được: ${esc(r.problem)}</div>`:''}
     <div class="row">${r.problem?'':`<button class="small primary" data-req="${esc(r.id)}" data-do="approve">Cho phép tạo</button>`}<button class="small" data-req="${esc(r.id)}" data-do="deny">Từ chối</button></div></div>`).join('');
 }
-$('#reqs').addEventListener('click',async e=>{
+function renderReqs(){
+  const n = (state?.requests || []).length, box = $('#reqs');
+  box.hidden = !n; $('#agBadge').hidden = !n; $('#agBadge').textContent = n;
+  box.innerHTML = n ? `<div class="req"><div class="row">🧩 Có <b>${n}</b> yêu cầu tạo agent cấp dưới đang chờ bạn duyệt.<button class="small primary" id="reqOpen">Xem &amp; duyệt</button></div></div>` : '';
+  const ar = $('#agReqs'); ar.hidden = !n; ar.innerHTML = n ? '<h4>Yêu cầu tạo agent đang chờ bạn</h4>' + reqCards() : '';
+}
+$('#reqs').addEventListener('click',e=>{ if(e.target.closest('#reqOpen')) openAgents() });
+$('#agReqs').addEventListener('click',async e=>{
   const b=e.target.closest('[data-req]'); if(!b) return; b.disabled=true;
-  try{await api('POST',`/api/requests/${encodeURIComponent(b.dataset.req)}/${b.dataset.do}`); toast(b.dataset.do==='approve'?'Đã tạo agent mới':'Đã từ chối','ok'); await refreshState()}catch(x){toast(x.message,'err'); b.disabled=false}
+  try{await api('POST',`/api/requests/${encodeURIComponent(b.dataset.req)}/${b.dataset.do}`); toast(b.dataset.do==='approve'?'Đã tạo agent mới':'Đã từ chối','ok'); await refreshState(); renderAgents()}catch(x){toast(x.message,'err'); b.disabled=false}
 });
+
+// ---------------------------------------------------------------- cây phân cấp agent
+let agEditing = '', agDrag = '';
+function agentTree(){
+  const list = (chatOn() ? state.chat.agents : tabList()).filter(w=>w.name!=='watch');
+  const h = state?.hierarchy || {}, names = new Set(list.map(w=>w.name)), out = [], seen = new Set(['lead']);
+  const par = n=> h[n] && names.has(h[n]) ? h[n] : 'lead';
+  const lead = list.find(w=>w.name==='lead'); if(lead) out.push({...lead, depth:0});
+  const walk = (n,d)=>{ for(const w of list){ if(seen.has(w.name) || par(w.name)!==n) continue; seen.add(w.name); out.push({...w, depth:d, parent:n}); walk(w.name, d+1) } };
+  walk('lead', 1);
+  for(const w of list) if(!seen.has(w.name)){ seen.add(w.name); out.push({...w, depth:1, parent:par(w.name)}) }
+  return out;
+}
+function below(all, name){ const s = new Set(); let grew = true; while(grew){ grew=false; for(const a of all) if(!s.has(a.name) && (a.parent===name || s.has(a.parent))){ s.add(a.name); grew=true } } return s }
+const agLabel = (n)=> n==='lead' ? 'Lead' : n;
+function effOpts(agent, cur){ const e = catalog[agent]?.efforts || []; return e.length ? ['<option value="">mặc định</option>', ...e.map(x=>`<option${x===cur?' selected':''}>${x}</option>`)].join('') : '<option value="">(không có)</option>' }
+function agRowHtml(a, all){
+  const task = state.tasks.find(t=>t.owner===a.name && t.status==='in-progress');
+  const status = a.busy ? `<span class="pill busy"><span class="dot"></span>đang làm${task?' '+esc(task.id):''}</span>`
+    : a.wants ? '<span class="pill wait"><span class="dot"></span>chờ bạn cho phép</span>'
+    : task ? `<span class="pill">đang giữ ${esc(task.id)}</span>` : '<span class="pill"><span class="dot on"></span>rảnh</span>';
+  const info = a.agent ? esc(a.agent)+(a.model?' · '+esc(a.model):' · model mặc định')+(a.effort?' · effort '+esc(a.effort):'') : esc(workerInfo(a.name));
+  const under = below(all, a.name);
+  const psel = a.name==='lead' ? '' : `<select class="agParent" title="Cấp trên trực tiếp (người giao việc cho agent này)">${all.filter(x=>x.name!==a.name && !under.has(x.name)).map(x=>`<option value="${esc(x.name)}"${x.name===a.parent?' selected':''}>dưới ${esc(agLabel(x.name))}</option>`).join('')}</select>`;
+  const row = `<div class="agrow" data-name="${esc(a.name)}" draggable="${a.name!=='lead'}" style="margin-left:${a.depth*24}px">
+    ${a.name==='lead'?'<span>👑</span>':'<span class="grip" title="Kéo thả vào agent khác để đặt làm cấp dưới của agent đó">⠿</span>'}<b>${esc(agLabel(a.name))}</b><span class="hint">${info}</span>${status}<span class="spacer"></span>${psel}
+    ${chatOn()?`<button class="small agEdit">✏️ Sửa</button>${a.name!=='lead'?'<button class="small danger agDel" title="Xoá agent này">🗑</button>':''}`:''}</div>`;
+  if(agEditing!==a.name) return row;
+  const models = catalog[a.agent]?.models || [];
+  return row + `<div class="agedit" data-name="${esc(a.name)}" style="margin-left:${a.depth*24}px">
+    ${a.name==='lead'?'':`<label>Tên<input class="aeName" maxlength="30" value="${esc(a.name)}" style="width:130px"></label>`}
+    <label>Model<input class="aeModel" list="aeModels" value="${esc(a.model||'')}" placeholder="mặc định" style="width:190px"><datalist id="aeModels">${models.map(m=>`<option value="${esc(m)}">`).join('')}</datalist></label>
+    <label>Effort<select class="aeEffort"${(catalog[a.agent]?.efforts||[]).length?'':' disabled'}>${effOpts(a.agent, a.effort)}</select></label>
+    <button class="small primary aeSave">Lưu</button><button class="small aeCancel">Huỷ</button>
+    <span class="hint" style="flex-basis:100%">Đổi model hoặc tên thì agent bắt đầu cuộc trò chuyện mới. Muốn đổi sang hãng khác (Claude, Codex, Gemini) thì xoá rồi thêm agent mới.</span></div>`;
+}
+function renderAgents(){
+  if(!state) return;
+  const all = agentTree();
+  $('#agTree').innerHTML = all.length ? all.map(a=>agRowHtml(a, all)).join('') : '<span class="hint">Chưa có agent nào đang chạy. Bấm Start agents trước.</span>';
+  $('#agAddBox').hidden = !chatOn();
+  $('#agHint').textContent = !all.length ? '' : chatOn()
+    ? 'Kéo thả một agent vào agent khác (hoặc chọn ở ô "dưới …") để đổi cấp trên. Agent chỉ nhận việc từ cấp trên trực tiếp của nó, còn việc bạn tự giao thì agent nào cũng nhận. Xoá agent: cấp dưới của nó chuyển lên cấp trên, task nó đang giữ trở về Todo, thư mục làm việc và code của nó được giữ lại.'
+    : 'Ở kiểu Terminal chỉ đổi được cấp trên. Muốn thêm, đổi tên, đổi model hoặc xoá agent thì dùng "Chọn agent & model" rồi Start lại, hoặc chuyển sang kiểu Chat.';
+  const ps = $('#aaParent'), cur = ps.value;
+  ps.innerHTML = all.map(a=>`<option value="${esc(a.name)}"${a.name===cur?' selected':''}>${esc(agLabel(a.name))}</option>`).join('');
+}
+function fillAddForm(){
+  const ag = $('#aaAgent').value || 'codex';
+  $('#aaAgent').innerHTML = AGENTS.map(x=>`<option value="${x}"${x===ag?' selected':''}>${esc(catalog[x]?.label||x)}</option>`).join('');
+  $('#aaModels').innerHTML = (catalog[ag]?.models||[]).map(m=>`<option value="${esc(m)}">`).join('');
+  $('#aaEffort').innerHTML = effOpts(ag, ''); $('#aaEffort').disabled = !(catalog[ag]?.efforts||[]).length;
+}
+function openAgents(){ agEditing=''; fillAddForm(); renderAgents(); renderReqs(); if(!$('#dlgAgents').open) $('#dlgAgents').showModal() }
+$('#btnAgents').onclick = openAgents;
+$('#agClose').onclick = ()=>$('#dlgAgents').close();
+$('#aaAgent').onchange = ()=>{ $('#aaModel').value=''; fillAddForm() };
+async function agSetParent(name, parent){
+  try{ await api('POST','/api/agents/'+encodeURIComponent(name),{parent}); toast(`${name} giờ nằm dưới ${agLabel(parent)}`,'ok') }catch(e){ toast(e.message,'err') }
+  await refreshState(); renderAgents();
+}
+// cấu hình lưu trên trình duyệt (dùng cho lần Start sau) đi theo thay đổi trong cây
+function syncCfg(fn){ const names = resolveNames(cfg.workers); cfg.workers.forEach((w,i)=>{ w.name = names[i] }); fn(cfg); if(!cfg.workers.length) cfg.workers=[{agent:'codex',model:'',effort:''}]; localSet('cfg.'+proj, JSON.stringify(cfg)); $('#cfgSummary').textContent = $('#cfgSummary').title = cfgSummaryText() }
+$('#agTree').addEventListener('change',e=>{ if(e.target.classList.contains('agParent')) agSetParent(e.target.closest('.agrow').dataset.name, e.target.value) });
+$('#agTree').addEventListener('click',async e=>{
+  const row = e.target.closest('[data-name]'); if(!row) return; const name = row.dataset.name;
+  if(e.target.closest('.agEdit')){ agEditing = agEditing===name ? '' : name; renderAgents(); return }
+  if(e.target.closest('.aeCancel')){ agEditing=''; renderAgents(); return }
+  if(e.target.closest('.aeSave')){
+    const nw = row.querySelector('.aeName') ? slugName(row.querySelector('.aeName').value) : name;
+    if(!nw){ toast('Nhập tên agent','err'); return }
+    const model = row.querySelector('.aeModel').value.trim(), effort = row.querySelector('.aeEffort').value;
+    try{
+      await api('POST','/api/agents/'+encodeURIComponent(name),{model, effort, ...(nw!==name?{rename:nw}:{})});
+      syncCfg(c=>{ if(name==='lead'){ c.lead.model=model; c.lead.effort=effort } else { const w=c.workers.find(x=>x.name===name); if(w){ w.name=nw; w.model=model; w.effort=effort } } });
+      if(win===name && nw!==name){ win=nw; localSet('win.'+proj,win); chatSig='' }
+      agEditing=''; toast('Đã lưu','ok');
+    }catch(x){ toast(x.message,'err') }
+    await refreshState(); renderAgents(); return;
+  }
+  if(e.target.closest('.agDel')){
+    const all = agentTree(), me = all.find(a=>a.name===name), kids = all.filter(a=>a.parent===name).map(a=>a.name);
+    const held = state.tasks.filter(t=>t.owner===name && ['ready','in-progress'].includes(t.status)).map(t=>t.id);
+    if(!confirm(`Xoá agent ${name}?` + (kids.length?`\n- Cấp dưới (${kids.join(', ')}) sẽ chuyển lên dưới ${agLabel(me?.parent||'lead')}.`:'') + (held.length?`\n- Task đang giữ (${held.join(', ')}) trở về Todo để giao lại.`:'') + '\n- Thư mục làm việc và code của agent được giữ lại trên máy.')) return;
+    try{
+      await api('DELETE','/api/agents/'+encodeURIComponent(name));
+      syncCfg(c=>{ c.workers = c.workers.filter(w=>w.name!==name) });
+      if(win===name){ win='lead'; localSet('win.'+proj,win); chatSig='' }
+      toast('Đã xoá agent '+name,'ok');
+    }catch(x){ toast(x.message,'err') }
+    await refreshState(); renderAgents();
+  }
+});
+$('#agTree').addEventListener('dragstart',e=>{ const r=e.target.closest('.agrow'); if(!r || r.dataset.name==='lead'){ e.preventDefault(); return } agDrag=r.dataset.name; r.classList.add('dragged'); e.dataTransfer.effectAllowed='move'; e.dataTransfer.setData('text/plain', agDrag) });
+$('#agTree').addEventListener('dragend',()=>{ agDrag=''; document.querySelectorAll('.agrow.over,.agrow.dragged').forEach(x=>x.classList.remove('over','dragged')) });
+$('#agTree').addEventListener('dragover',e=>{ const r=e.target.closest('.agrow'); if(!r || !agDrag || r.dataset.name===agDrag) return; e.preventDefault(); document.querySelectorAll('.agrow.over').forEach(x=>x.classList.remove('over')); r.classList.add('over') });
+$('#agTree').addEventListener('drop',e=>{ const r=e.target.closest('.agrow'); if(!r || !agDrag || r.dataset.name===agDrag) return; e.preventDefault(); const n=agDrag; agDrag=''; agSetParent(n, r.dataset.name) });
+$('#aaAdd').onclick = async()=>{
+  const name = slugName($('#aaName').value); if(!name){ toast('Nhập tên agent','err'); $('#aaName').focus(); return }
+  $('#aaAdd').disabled = true;
+  try{
+    await api('POST','/api/agents',{name, agent:$('#aaAgent').value, model:$('#aaModel').value.trim(), effort:$('#aaEffort').value, parent:$('#aaParent').value||'lead'});
+    $('#aaName').value=''; $('#aaModel').value=''; toast('Đã thêm agent '+name,'ok');
+  }catch(x){ toast(x.message,'err') }
+  $('#aaAdd').disabled = false; await refreshState(); renderAgents();
+};
+
+// ---------------------------------------------------------------- thống kê token
+let usageRange = localGet('usageRange') || 'all';
+const fmtTok = (n)=> n>=1e6 ? (n/1e6).toFixed(2).replace(/\.?0+$/,'')+'M' : n>=1e4 ? (n/1e3).toFixed(1).replace(/\.0$/,'')+'k' : String(Math.round(n)).replace(/\B(?=(\d{3})+$)/g,'.');
+const pct = (a,b)=> b ? (a/b*100).toFixed(a/b<0.1&&a?1:0)+'%' : '0%';
+async function renderUsage(){
+  document.querySelectorAll('#uRange button').forEach(b=>b.classList.toggle('sel', b.dataset.r===usageRange));
+  let j; try{ j = await api('GET','/api/usage?range='+usageRange) }catch(e){ $('#uBody').innerHTML = `<span class="hint">${esc(e.message)}</span>`; return }
+  const rows = j.rows.map(r=>({...r, total:r.in+r.out})), total = rows.reduce((s,r)=>s+r.total,0), cost = rows.reduce((s,r)=>s+(r.cost||0),0);
+  if(!total){ $('#uBody').innerHTML = '<span class="hint">Chưa có số liệu trong khoảng này. Số liệu được ghi sau mỗi lượt agent trả lời ở kiểu Chat.</span>'; return }
+  const prov = AGENTS.map(a=>{ const rs = rows.filter(r=>r.agent===a); return {a, total:rs.reduce((s,r)=>s+r.total,0), cost:rs.reduce((s,r)=>s+(r.cost||0),0), turns:rs.reduce((s,r)=>s+r.turns,0)} });
+  $('#uBody').innerHTML = `<div style="display:grid;gap:12px">
+    <div>Tổng cộng <b title="${total} token">${fmtTok(total)}</b> token${cost?` · ước tính <b>$${cost.toFixed(2)}</b> (chỉ Claude báo chi phí)`:''}${j.since&&usageRange==='all'?` <span class="hint">· từ ${esc(j.since)}</span>`:''}</div>
+    <div class="utot">${prov.map(p=>`<div class="ucard"><span class="hint">${esc(catalog[p.a]?.label||p.a)}</span><span class="big" title="${p.total} token">${fmtTok(p.total)} <span class="hint" style="font-weight:400">${pct(p.total,total)}</span></span>
+      <div class="bar ${p.a}"><i style="width:${total?p.total/total*100:0}%"></i></div><span class="hint">${p.turns} lượt${p.cost?' · $'+p.cost.toFixed(2):''}</span></div>`).join('')}</div>
+    <div class="utable"><span class="h">Agent</span><span class="h">Hãng · model</span><span class="h r">Lượt</span><span class="h r">Vào</span><span class="h r">Ra</span><span class="h r">Tổng</span><span class="h">% tổng</span>
+      ${rows.map(r=>`<b>${esc(agLabel(r.name))}</b><span class="hint">${esc(r.agent)}${r.model?' · '+esc(r.model):' · mặc định'}</span><span class="r">${r.turns}</span><span class="r" title="${r.in} token, trong đó ${r.cached||0} lấy từ bộ nhớ đệm">${fmtTok(r.in)}</span><span class="r" title="${r.out} token">${fmtTok(r.out)}</span><span class="r" title="${r.total} token"><b>${fmtTok(r.total)}</b></span>
+        <span class="row" style="gap:6px;flex-wrap:nowrap"><span class="bar ${esc(r.agent)}" style="flex:1"><i style="width:${r.total/total*100}%"></i></span><span style="width:42px;text-align:right">${pct(r.total,total)}</span></span>`).join('')}</div></div>`;
+}
+$('#btnUsage').onclick = ()=>{ $('#uBody').innerHTML=''; $('#dlgUsage').showModal(); renderUsage() };
+$('#uClose').onclick = ()=>$('#dlgUsage').close();
+$('#uRange').addEventListener('click',e=>{ const b=e.target.closest('[data-r]'); if(!b) return; usageRange=b.dataset.r; localSet('usageRange',usageRange); renderUsage() });
+
+// ---------------------------------------------------------------- báo khi agent xong / bị chặn / cần bạn
+let notifyOn = localGet('notify')==='1', prevSnap = null, audioCtx = null;
+function renderNotifyBtn(){ $('#btnNotify').textContent = notifyOn ? '🔔 Báo: bật' : '🔕 Báo: tắt' }
+function beep(){
+  try{
+    audioCtx = audioCtx || new (window.AudioContext||window.webkitAudioContext)();
+    const t = audioCtx.currentTime;
+    for(const [f,d] of [[880,0],[1175,.14]]){ const o=audioCtx.createOscillator(), g=audioCtx.createGain(); o.connect(g); g.connect(audioCtx.destination); o.frequency.value=f; g.gain.setValueAtTime(.07,t+d); g.gain.exponentialRampToValueAtTime(.001,t+d+.25); o.start(t+d); o.stop(t+d+.26) }
+  }catch{}
+}
+function alertUser(title, body){
+  if(!notifyOn) return;
+  beep();
+  if(!document.hidden && document.hasFocus()) return;
+  try{ if(window.Notification && Notification.permission==='granted'){ const n = new Notification(title, {body: body||'', tag:'squad-'+title}); n.onclick = ()=>{ window.focus(); n.close() } } }catch{}
+}
+$('#btnNotify').onclick = async()=>{
+  notifyOn = !notifyOn; localSet('notify', notifyOn?'1':'0'); renderNotifyBtn();
+  if(!notifyOn) return;
+  beep();
+  try{ if(window.Notification && Notification.permission==='default') await Notification.requestPermission() }catch{}
+  toast(window.Notification && Notification.permission==='granted' ? 'Đã bật báo: có tiếng và thông báo khi agent xong, bị chặn hoặc cần bạn.' : 'Đã bật tiếng báo. Trình duyệt chưa cho hiện thông báo, nên chỉ có tiếng.','ok');
+};
+renderNotifyBtn();
+function notifyAgents(){
+  const now = { agents:Object.fromEntries((state.chat?.agents||[]).map(a=>[a.name,{busy:a.busy||a.queued>0, wants:a.wants}])), reqs:(state.requests||[]).map(r=>r.id) };
+  const old = prevSnap; prevSnap = now;
+  if(!old) return;
+  for(const [n,a] of Object.entries(now.agents)){
+    const o = old.agents[n]; if(!o) continue;
+    if(a.wants && !o.wants) alertUser(`${agLabel(n)} cần bạn cho phép`, 'Mở chat của agent này và bấm "Cho phép & làm tiếp".');
+    else if(n==='lead' && o.busy && !a.busy) alertUser('Lead đã trả lời', state.project?.name||'');
+  }
+  const fresh = now.reqs.filter(id=>!old.reqs.includes(id));
+  if(fresh.length) alertUser('Có yêu cầu tạo agent mới', 'Mở mục 🌳 Agents để duyệt.');
+}
 
 const NOCAT = '(chưa phân nhóm)';
 const catOf = (t)=> t.category || NOCAT;
@@ -566,7 +826,7 @@ function renderTabs(){
   const all = treeOrder(tabList());
   const wins = all.filter(w=>w.name!=='watch' || $('#showWatch').checked || win==='watch');
   if(wins.length && !wins.some(w=>w.name===win)) win = wins[0].name;
-  $('#tabs').innerHTML = wins.map(w=>`<button class="tab small${w.name===win?' sel':''}" data-win="${esc(w.name)}" title="${esc(w.name==='lead'?'Lead: chia việc và nói chuyện với bạn':(workerInfo(w.name)||w.name)+(state?.hierarchy?.[w.name]?' · báo cáo cho '+state.hierarchy[w.name]:''))}">${w.depth>1?'<span class="hint">'+'·'.repeat(w.depth-1)+'</span>':''}${w.depth?'└ ':''}${esc(winLabel(w.name))}${w.busy?'<span class="busy" title="đang làm việc"></span>':''}</button>`).join('') || '<span class="hint">Agents</span>';
+  $('#tabs').innerHTML = wins.map(w=>`<button class="tab small${w.name===win?' sel':''}" data-win="${esc(w.name)}" title="${esc(w.name==='lead'?'Lead: chia việc và nói chuyện với bạn':(workerInfo(w.name)||w.name)+(state?.hierarchy?.[w.name]?' · báo cáo cho '+state.hierarchy[w.name]:''))}">${w.depth>1?'<span class="hint">'+'·'.repeat(w.depth-1)+'</span>':''}${w.depth?'└ ':''}${esc(winLabel(w.name))}${w.busy?'<span class="busy" title="đang làm việc"></span>':''}${w.wants?'<span class="need" title="đang chờ bạn bấm Cho phép">!</span>':''}</button>`).join('') || '<span class="hint">Agents</span>';
   renderSuggest();
 }
 $('#showWatch').onchange = ()=>{ if(state) renderTabs() };
@@ -602,6 +862,7 @@ function notifyChanges(){
     for(const t of state.tasks){
       if(lastStatus[t.id] && lastStatus[t.id]!==t.status && (t.status==='done'||t.status==='blocked')){
         toast(`${t.id} → ${t.status}\n${t.title}${t.result?'\n'+t.result:''}`, t.status==='done'?'ok':'err');
+        alertUser(`${t.id} ${t.status==='done'?'đã xong':'bị chặn'}`, t.title);
       }
     }
   }
@@ -615,7 +876,8 @@ async function refreshState(){
     $('#sdot').classList.toggle('on', isRunning());
     $('#stext').textContent = chatOn() ? `đang chạy (chat) · ${state.chat.agents.length} agent` : state.running ? `đang chạy (terminal) · ${state.windows.length} window` : `chưa chạy`;
     $('#stext').parentElement.title = state.project.path + ' · phiên tmux ' + state.session;
-    renderBoard(); renderTabs(); notifyChanges(); renderBanner(); renderReqs();
+    renderBoard(); renderTabs(); notifyChanges(); notifyAgents(); renderBanner(); renderReqs();
+    if($('#dlgAgents').open && !agEditing && !agDrag && !document.activeElement?.closest?.('#agTree')) renderAgents();
     $('#btnCleanup').hidden = !state.tasks.some(t=>t.status==='done'); $('#btnClearChat').hidden = !isRunning();
   }catch(e){$('#stext').textContent='mất kết nối tới server'; $('#sdot').classList.remove('on')}
 }
@@ -698,12 +960,32 @@ function stepsHtml(m){
   const label = m.running ? `Đang làm… (${st.length} bước)` : `${st.length} bước đã làm` + (errs?` · ${errs} lỗi`:'') + (denied?` · ${denied} bị chặn`:'');
   return `<details class="steps"${m.running?' open':''}><summary>${esc(label)}</summary><ol>${st.slice(-80).map(s=>`<li class="${s.error?'err':''}"><span>${esc(s.icon||'•')}</span><span>${esc(s.title||'')}${s.denied?' — bị chặn, cần bạn cho phép':''}</span>${s.detail?`<pre>${esc(s.detail)}</pre>`:''}</li>`).join('')}</ol></details>`;
 }
+const fileUrl = (p, q='')=> withP('/api/file?path='+encodeURIComponent(p)+q);
+const fmtSize = (n)=> n>=1048576 ? (n/1048576).toFixed(1)+' MB' : n>=1024 ? Math.round(n/1024)+' KB' : n+' B';
+function filesHtml(m){
+  const fl = m.files||[]; if(!fl.length) return '';
+  const attr = (f)=>`data-file="${esc(f.path)}" data-name="${esc(f.name)}" data-kind="${esc(f.kind)}"`;
+  return '<div class="atts">' + fl.filter(f=>f.kind==='image').map(f=>`<img ${attr(f)} loading="lazy" src="${esc(fileUrl(f.path))}" alt="${esc(f.name)}" title="${esc(f.name)} (bấm để xem lớn)">`).join('')
+    + fl.filter(f=>f.kind!=='image').map(f=>`<button class="filecard" ${attr(f)} title="${esc(f.path)}">📄 <b>${esc(f.name)}</b><span class="hint">${fmtSize(f.size||0)}${f.edited?' · vừa sửa':''}</span></button>`).join('') + '</div>';
+}
+async function openFile(path, name, kind){
+  $('#dfTitle').textContent = name; $('#dfDl').href = fileUrl(path,'&dl=1'); $('#dfDl').setAttribute('download', name); $('#dfNote').textContent = path;
+  const body = $('#dfBody'); body.innerHTML = '<span class="hint">Đang mở…</span>';
+  if(!$('#dlgFile').open) $('#dlgFile').showModal();
+  if(kind==='image'){ body.innerHTML = `<img src="${esc(fileUrl(path))}" alt="${esc(name)}">`; return }
+  try{
+    const j = await api('GET','/api/file?path='+encodeURIComponent(path)+'&text=1');
+    if(j.binary) body.innerHTML = '<span class="hint">File này không phải dạng chữ nên không xem trước được. Bấm "Tải về" để mở bằng ứng dụng trên máy.</span>';
+    else { body.innerHTML = '<pre></pre>'; body.firstChild.textContent = j.text; if(j.truncated) $('#dfNote').textContent = path + ' · file dài, chỉ hiện phần đầu. Bấm "Tải về" để xem đủ.' }
+  }catch(e){ body.innerHTML = `<span class="hint">${esc(e.message)}</span>` }
+}
+$('#dfClose').onclick = ()=>$('#dlgFile').close();
 function msgHtml(m){
   const time = new Date(m.ts).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'});
-  if(m.role==='you') return `<div class="msg you" title="${esc(time)}">${esc(m.text)}</div>`;
+  if(m.role==='you') return `<div class="msg you" title="${esc(time)}">${esc(m.text)}${filesHtml(m)}</div>`;
   if(m.role==='system') return `<div class="msg system">${esc(m.text)} · ${esc(time)}</div>`;
-  const who = (win==='lead'?'👑 Lead':'🛠 '+win) + (m.agent?' · '+m.agent:'') + ' · ' + time;
-  return `<div class="msg agent"><div class="who">${esc(who)}</div>${stepsHtml(m)}${m.text?md(m.text):''}${m.running&&!m.text?'<span class="typing"><i></i><i></i><i></i></span>':''}${m.error?`<div class="errbox">⚠️ ${esc(m.error)}</div>`:''}${grantHtml(m)}${m.note?`<div class="hint">${esc(m.note)}</div>`:''}</div>`;
+  const who = (win==='lead'?'👑 Lead':'🛠 '+win) + (m.agent?' · '+m.agent:'') + ' · ' + time + (m.usage?' · '+fmtTok(m.usage.in+m.usage.out)+' token':'');
+  return `<div class="msg agent"><div class="who">${esc(who)}</div>${stepsHtml(m)}${m.text?md(m.text):''}${m.running&&!m.text?'<span class="typing"><i></i><i></i><i></i></span>':''}${filesHtml(m)}${m.error?`<div class="errbox">⚠️ ${esc(m.error)}</div>`:''}${grantHtml(m)}${m.note?`<div class="hint">${esc(m.note)}</div>`:''}</div>`;
 }
 function grantHtml(m){
   if(!m.grants?.length || m.running) return '';
@@ -713,6 +995,7 @@ function grantHtml(m){
     <div class="row"><button class="small primary" data-grant="${esc(m.id)}">Cho phép &amp; làm tiếp</button><span class="hint">Quyền được lưu cho agent này; thu hồi ở mục Nâng cao.</span></div></div>`;
 }
 $('#chatlog').addEventListener('click',async e=>{
+  const f=e.target.closest('[data-file]'); if(f){ openFile(f.dataset.file, f.dataset.name, f.dataset.kind); return }
   const b=e.target.closest('[data-grant]'); if(!b) return;
   b.disabled=true;
   try{await api('POST',`/api/chat/${encodeURIComponent(win)}/grant`,{msgId:b.dataset.grant}); chatSig=''; refreshChat()}catch(x){toast(x.message,'err'); b.disabled=false}
@@ -817,14 +1100,14 @@ for(const [id,listFn] of [['#msg',()=>attachments],['#lText',()=>leadAttachments
 }
 
 // ---------------------------------------------------------------- gửi tin
-async function sendTo(target, text){
-  if(chatOn()) await api('POST',`/api/chat/${encodeURIComponent(target)}/send`,{text});
-  else await api('POST','/api/send',{win:target,text});
+async function sendTo(target, text, files=[]){
+  if(chatOn()) await api('POST',`/api/chat/${encodeURIComponent(target)}/send`,{text, files});
+  else await api('POST','/api/send',{win:target,text:withAttachments(text, files)});
 }
 async function sendMsg(){
   const text = $('#msg').value; if(!text.trim() && !attachments.length) return;
   if(!isRunning()){toast('Bấm Start agents trước đã.','err'); return}
-  try{await sendTo(win, withAttachments(text.trim(), attachments)); $('#msg').value=''; attachments=[]; renderChips(); setTimeout(refreshPane,300)}catch(e){toast(e.message,'err')}
+  try{await sendTo(win, text.trim(), attachments); $('#msg').value=''; attachments=[]; renderChips(); setTimeout(refreshPane,300)}catch(e){toast(e.message,'err')}
 }
 
 async function openTask(id){
@@ -895,7 +1178,7 @@ $('#lSend').onclick = async()=>{
   const text=$('#lText').value.trim(); if(!text){toast('Hãy mô tả việc cần làm','err'); return}
   if(!isRunning()){toast('Phiên chưa chạy. Bấm "Start agents" trước.','err'); return}
   try{
-    await sendTo('lead', withAttachments(text, leadAttachments));
+    await sendTo('lead', text, leadAttachments);
     $('#lText').value=''; leadAttachments=[]; renderChips(); $('#dlgNew').close();
     win='lead'; localSet('win.'+proj,win); renderTabs(); refreshPane(); toast('Đã gửi cho lead. Task sẽ hiện ở bảng khi lead tạo xong.','ok');
   }catch(e){toast(e.message,'err')}
