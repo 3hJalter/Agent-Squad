@@ -190,6 +190,7 @@ a.btn:hover{border-color:var(--accent)}
   <button id="btnStart" class="primary">Start agents</button>
   <button id="btnStop" class="danger">Stop</button>
   <button id="btnAgents" class="small" title="Xem và sửa cây phân cấp agent: ai là cấp trên của ai, thêm, đổi tên, đổi model, xoá agent">🌳 Agents<span id="agBadge" class="badge" hidden></span></button>
+  <button id="btnRes" class="small" title="Folder và file thật mà agent được đọc và sửa tại chỗ (code, tài liệu, dữ liệu)">📁 Tài nguyên<span id="resCount" class="hint"></span></button>
   <button id="btnUsage" class="small" title="Số token mỗi agent đã dùng, chia theo Claude, Codex, Gemini">📊 Token</button>
   <button id="btnNotify" class="small" title="Báo bằng tiếng và thông báo của trình duyệt khi agent xong, bị chặn hoặc cần bạn"></button>
   <button id="btnUpdate" class="small" title="Tải bản Agent-Squad mới nhất từ GitHub và khởi động lại dashboard">⟳ Cập nhật</button>
@@ -294,11 +295,13 @@ a.btn:hover{border-color:var(--accent)}
   <div class="dlg-h"><h3>Project</h3><button id="pjClose" class="small">Đóng</button></div>
   <div class="dlg-b">
     <div class="box"><h4>✨ Tạo project mới</h4>
+      <span class="seg"><button id="pkCode" class="sel">💻 Code (có git)</button><button id="pkOffice">🗂 Điều hành (không git)</button></span>
+      <p class="hint" style="margin:0" id="pkHint"></p>
       <div class="row"><label style="flex:1;min-width:180px">Tên project<input id="pnName" placeholder="Ví dụ: Web bán hàng"></label></div>
       <label>Mô tả ngắn (tuỳ chọn, ghi vào README.md để agent hiểu project)<textarea id="pnDesc" style="min-height:50px" placeholder="Ví dụ: Trang web bán quần áo, có giỏ hàng và thanh toán."></textarea></label>
       <div class="row"><span class="hint">Đặt trong:</span><code id="pnParentShow" class="fsdir"></code><button id="pnBrowse" class="small">Đổi chỗ…</button>
         <span class="spacer"></span><button id="pnCreate" class="primary">Tạo project</button></div>
-      <span class="hint">Dashboard tạo thư mục, repo git và các file khung cho agent. Bạn chỉ cần Start rồi nhắn cho Lead.</span>
+      <span class="hint" id="pnNote"></span>
     </div>
     <div class="box"><h4>📂 Thêm project có sẵn</h4>
       <div class="row"><input id="pjPath" placeholder="Chọn thư mục bằng nút bên cạnh, hoặc gõ ~/my-app, D:\Web\my-app" style="flex:1;min-width:220px">
@@ -318,6 +321,19 @@ a.btn:hover{border-color:var(--accent)}
       <div id="pjList" style="display:grid;gap:6px"></div>
       <span class="hint">"Xoá khỏi danh sách" chỉ bỏ đường dẫn khỏi dashboard, không xoá file nào trên máy.</span></div>
     <p class="hint" style="margin:0">Mỗi project có phiên agent riêng, chạy song song được. Repo để trong WSL (Home) chạy nhanh hơn ổ C:/D:.</p>
+  </div>
+</dialog>
+
+<dialog id="dlgRes">
+  <div class="dlg-h"><h3>📁 Tài nguyên của project <span class="hint" id="resProj"></span></h3><button id="resClose" class="small">Đóng</button></div>
+  <div class="dlg-b">
+    <p class="hint" style="margin:0" id="resHint"></p>
+    <div id="resList" style="display:grid;gap:6px"></div>
+    <div class="box"><h4>➕ Thêm folder hoặc file</h4>
+      <div class="row"><input id="resPath" placeholder="Chọn bằng nút bên cạnh, hoặc gõ D:\Unity\ShipMania, ~/docs, /mnt/d/data/ghi-chu.md" style="flex:1;min-width:220px">
+        <button id="resBrowse" class="small">📁 Duyệt…</button><button id="resNative" class="small" title="Mở hộp thoại chọn thư mục của Windows">🪟 Hộp thoại Windows</button><button id="resAdd" class="primary small">Thêm</button></div>
+      <span class="hint">Muốn thêm một file thì gõ đường dẫn của nó vào ô trên (nút Duyệt chỉ chọn thư mục).</span>
+    </div>
   </div>
 </dialog>
 
@@ -382,7 +398,7 @@ async function api(method, url, body, raw){
 async function loadProjects(){
   const j = await api('GET','/api/projects'); projects = j.projects;
   if(!projects.some(p=>p.id===proj)) proj = projects[0]?.id || '';
-  $('#projSel').innerHTML = projects.map(p=>`<option value="${esc(p.id)}"${p.id===proj?' selected':''}>${p.running?'● ':''}${esc(p.name)}</option>`).join('');
+  $('#projSel').innerHTML = projects.map(p=>`<option value="${esc(p.id)}"${p.id===proj?' selected':''}>${p.running?'● ':''}${p.kind==='office'?'🗂 ':''}${esc(p.name)}</option>`).join('');
   renderProjList();
 }
 function switchProject(id){
@@ -423,17 +439,27 @@ $('#pjBrowse').onclick = ()=>{ const box=$('#fsBox'); if(fsTarget!=='path'){fsTa
 $('#fsBox').addEventListener('click',e=>{const b=e.target.closest('[data-dir]'); if(b && b.dataset.dir) fsOpen(b.dataset.dir)});
 $('#fsUp').onclick = ()=>{ if($('#fsUp').dataset.dir) fsOpen($('#fsUp').dataset.dir) };
 let fsTarget = 'path';
-$('#fsPick').onclick = ()=>{ if(fsTarget==='parent'){ setParent(fsDir) } else { $('#pjPath').value = fsDir } $('#fsBox').hidden = true };
+$('#fsPick').onclick = ()=>{ if(fsTarget==='parent'){ setParent(fsDir) } else if(fsTarget==='res'){ $('#resPath').value = fsDir } else { $('#pjPath').value = fsDir } $('#fsBox').hidden = true };
 function setParent(d){ localSet('newParent', d); $('#pnParentShow').textContent = d }
 $('#pnBrowse').onclick = ()=>{ const box=$('#fsBox'); fsTarget='parent'; $('#pnBrowse').closest('.box').append(box); box.hidden=false; fsOpen(localGet('newParent')||'') };
+let newKind = 'code';
+function setNewKind(k){
+  newKind = k; $('#pkCode').classList.toggle('sel',k==='code'); $('#pkOffice').classList.toggle('sel',k==='office');
+  $('#pkHint').textContent = k==='office'
+    ? 'Thư mục chỉ chứa task, lịch sử chat và quy ước, không dùng git. Code, tài liệu, dữ liệu thật nằm ở nơi khác trên máy; bạn khai báo chúng ở nút "📁 Tài nguyên" để agent đọc và sửa tại chỗ. Có sẵn một agent "git" lo commit, pull, merge, push cho các thư mục tài nguyên.'
+    : 'Thư mục có git riêng. Mỗi worker làm trên nhánh riêng rồi Lead gộp lại. Hợp với project code bạn bắt đầu từ đầu.';
+  $('#pnNote').textContent = k==='office' ? 'Dashboard chỉ tạo thư mục và các file khung cho agent, không tạo git.' : 'Dashboard tạo thư mục, repo git và các file khung cho agent. Bạn chỉ cần Start rồi nhắn cho Lead.';
+}
+$('#pkCode').onclick = ()=>setNewKind('code'); $('#pkOffice').onclick = ()=>setNewKind('office'); setNewKind('code');
 $('#pnCreate').onclick = async()=>{
   const name=$('#pnName').value.trim(); if(!name){toast('Nhập tên project','err'); $('#pnName').focus(); return}
   $('#pnCreate').disabled=true;
   try{
-    const r = await api('POST','/api/projects/new',{name, description:$('#pnDesc').value, parent: localGet('newParent')||'~'});
+    const r = await api('POST','/api/projects/new',{name, description:$('#pnDesc').value, parent: localGet('newParent')||'~', office: newKind==='office'});
     $('#pnName').value=''; $('#pnDesc').value='';
-    toast(`Đã tạo project ${r.project.name}\n${r.project.path}` + (r.commit&&!r.commit.ok?'\nChưa commit được: '+r.commit.out:'\nBấm Start agents rồi nhắn cho Lead để bắt đầu.'), r.commit&&!r.commit.ok?'err':'ok');
+    toast(`Đã tạo project ${r.project.name}\n${r.project.path}` + (r.office ? '\nBước tiếp: thêm folder dữ liệu ở "📁 Tài nguyên", rồi Start agents.' : r.commit&&!r.commit.ok?'\nChưa commit được: '+r.commit.out:'\nBấm Start agents rồi nhắn cho Lead để bắt đầu.'), r.commit&&!r.commit.ok?'err':'ok');
     $('#dlgProj').close(); proj=r.project.id; await loadProjects(); switchProject(proj);
+    if(r.office) setTimeout(()=>openRes(), 600);
   }catch(e){toast(e.message,'err')}
   $('#pnCreate').disabled=false;
 };
@@ -462,7 +488,7 @@ function renderBanner(){
   if(state.missing?.length) html=`Project này thiếu file khung (${esc(state.missing.join(', '))}). <button id="btnScaffold" class="small primary">Tạo file khung</button>`;
   else if(state.needsCommit) html=`Các file khung (AGENTS.md, CLAUDE.md, scripts/) chưa được commit, nên worker sẽ không thấy chúng. <button id="btnCommit" class="small primary">Commit file khung</button>`;
   b.innerHTML=html; b.hidden=!html; document.documentElement.style.setProperty('--bannerH', html? (b.offsetHeight+10)+'px':'0px');
-  $('#btnScaffold')?.addEventListener('click',async()=>{try{const r=await api('POST','/api/projects',{path:state.project.path}); toast('Đã tạo file khung (AGENTS.md, CLAUDE.md, scripts/).','ok'); refreshState()}catch(e){toast(e.message,'err')}});
+  $('#btnScaffold')?.addEventListener('click',async()=>{try{ if(state.project.kind==='office') await api('POST','/api/office/scaffold'); else await api('POST','/api/projects',{path:state.project.path}); toast('Đã tạo file khung (AGENTS.md, CLAUDE.md, scripts/).','ok'); refreshState()}catch(e){toast(e.message,'err')}});
   $('#btnCommit')?.addEventListener('click',async()=>{try{const r=await api('POST','/api/projects/commit'); toast(r.out||'Đã commit','ok'); refreshState()}catch(e){toast(e.message,'err')}});
 }
 
@@ -518,8 +544,10 @@ function setViewMode(m){
     : 'Tin nhắn dạng chat như app Claude, xem được từng bước agent làm. Bắt đầu với quyền an toàn (sửa file trong project, chạy lệnh git và lệnh kiểm tra). Khi agent cần thêm quyền, tin nhắn hiện nút "Cho phép" để bạn bấm.';
 }
 $('#vmChat').onclick=()=>setViewMode('chat'); $('#vmTerm').onclick=()=>setViewMode('terminal');
+const isOffice = ()=> (state?.project?.kind || projects.find(p=>p.id===proj)?.kind) === 'office';
 function renderCfg(){
-  setViewMode(cfg.mode);
+  $('#vmTerm').hidden = isOffice();
+  setViewMode(isOffice() ? 'chat' : cfg.mode);
   $('#cfgLead').innerHTML = agentRow(cfg.lead, 0, false);
   $('#cfgWorkers').innerHTML = cfg.workers.map((w,i)=>agentRow(w,i,true)).join('');
 }
@@ -642,7 +670,7 @@ function renderAgents(){
   $('#agTree').innerHTML = all.length ? all.map(a=>agRowHtml(a, all)).join('') : '<span class="hint">Chưa có agent nào đang chạy. Bấm Start agents trước.</span>';
   $('#agAddBox').hidden = !chatOn();
   $('#agHint').textContent = !all.length ? '' : chatOn()
-    ? 'Kéo thả một agent vào agent khác (hoặc chọn ở ô "dưới …") để đổi cấp trên. Agent chỉ nhận việc từ cấp trên trực tiếp của nó, còn việc bạn tự giao thì agent nào cũng nhận. Xoá agent: cấp dưới của nó chuyển lên cấp trên, task nó đang giữ trở về Todo, thư mục làm việc và code của nó được giữ lại.'
+    ? (isOffice() ? 'Agent "git" là agent duy nhất chạy git (commit, pull, merge, push) trong các thư mục tài nguyên; Lead giao việc lưu và đẩy code cho nó, còn push thì bạn bấm "Cho phép". Muốn đổi sang Codex thì không nên: Codex bị chặn ghi vào .git. ' : '') + 'Kéo thả một agent vào agent khác (hoặc chọn ở ô "dưới …") để đổi cấp trên. Agent chỉ nhận việc từ cấp trên trực tiếp của nó, còn việc bạn tự giao thì agent nào cũng nhận. Xoá agent: cấp dưới của nó chuyển lên cấp trên, task nó đang giữ trở về Todo, thư mục làm việc và code của nó được giữ lại.'
     : 'Ở kiểu Terminal chỉ đổi được cấp trên. Muốn thêm, đổi tên, đổi model hoặc xoá agent thì dùng "Chọn agent & model" rồi Start lại, hoặc chuyển sang kiểu Chat.';
   const ps = $('#aaParent'), cur = ps.value;
   ps.innerHTML = all.map(a=>`<option value="${esc(a.name)}"${a.name===cur?' selected':''}>${esc(agLabel(a.name))}</option>`).join('');
@@ -683,7 +711,7 @@ $('#agTree').addEventListener('click',async e=>{
   if(e.target.closest('.agDel')){
     const all = agentTree(), me = all.find(a=>a.name===name), kids = all.filter(a=>a.parent===name).map(a=>a.name);
     const held = state.tasks.filter(t=>t.owner===name && ['ready','in-progress'].includes(t.status)).map(t=>t.id);
-    if(!confirm(`Xoá agent ${name}?` + (kids.length?`\n- Cấp dưới (${kids.join(', ')}) sẽ chuyển lên dưới ${agLabel(me?.parent||'lead')}.`:'') + (held.length?`\n- Task đang giữ (${held.join(', ')}) trở về Todo để giao lại.`:'') + '\n- Thư mục làm việc và code của agent được giữ lại trên máy.')) return;
+    if(!confirm(`Xoá agent ${name}?` + (kids.length?`\n- Cấp dưới (${kids.join(', ')}) sẽ chuyển lên dưới ${agLabel(me?.parent||'lead')}.`:'') + (held.length?`\n- Task đang giữ (${held.join(', ')}) trở về Todo để giao lại.`:'') + (name==='git' && isOffice() ? '\n- Không còn ai commit hay push cho thư mục tài nguyên (bạn thêm lại agent tên "git" được).' : '') + (isOffice() ? '' : '\n- Thư mục làm việc và code của agent được giữ lại trên máy.'))) return;
     try{
       await api('DELETE','/api/agents/'+encodeURIComponent(name));
       syncCfg(c=>{ c.workers = c.workers.filter(w=>w.name!==name) });
@@ -804,6 +832,7 @@ function renderBoard(){
 function winLabel(name){
   if(name==='lead') return '👑 Lead';
   if(name==='watch') return '📜 watch';
+  if(name==='git' && isOffice()) return '🔀 git';
   return '🛠 '+name;
 }
 function workerInfo(name){
@@ -839,21 +868,36 @@ const SUGGEST = {
     ['⬆️ Push GitHub', 'Đẩy (push) nhánh chính lên GitHub và báo kết quả.'],
     ['❓ Giải thích', 'Giải thích ngắn gọn, dễ hiểu bạn vừa làm gì và bước tiếp theo là gì.'],
   ],
+  leadOffice: [
+    ['🗂 Giao việc mới', 'Hãy lên kế hoạch, chia thành task nhỏ và giao cho worker: ', true],
+    ['📋 Tiến độ', 'Báo cáo ngắn gọn tiến độ các task hiện tại.'],
+    ['💾 Lưu vào git', 'Giao cho agent git commit các thay đổi trong thư mục tài nguyên (hỏi mình nếu cần chọn repo hoặc nội dung commit), rồi báo kết quả.'],
+    ['⬆️ Đẩy lên GitHub', 'Giao cho agent git pull rồi push các repo trong tài nguyên lên GitHub, rồi báo kết quả.'],
+    ['❓ Giải thích', 'Giải thích ngắn gọn, dễ hiểu bạn vừa làm gì và bước tiếp theo là gì.'],
+  ],
+  git: [
+    ['📋 Trạng thái', 'Chạy git status cho từng repo trong thư mục tài nguyên và báo ngắn gọn.'],
+    ['💾 Commit', 'Commit các thay đổi trong repo: '],
+    ['⬇️ Pull', 'Pull (git pull --no-rebase) các repo trong tài nguyên và báo kết quả.'],
+    ['⬆️ Push', 'Push các repo trong tài nguyên lên GitHub và báo kết quả.'],
+  ],
   worker: [
     ['🔎 Đang làm gì?', 'Bạn đang làm gì? Trả lời ngắn gọn.'],
     ['▶ Làm tiếp', 'Tiếp tục task hiện tại.'],
     ['⏸ Dừng lại', 'Dừng lại, ghi lý do vào phần Notes của task và đặt Status: blocked.'],
   ],
 };
+const suggestKey = ()=> win==='lead' ? (isOffice()?'leadOffice':'lead') : (win==='git' && isOffice()) ? 'git' : 'worker';
 function renderSuggest(){
-  const list = win==='watch' ? [] : SUGGEST[win==='lead'?'lead':'worker'];
+  const list = win==='watch' ? [] : SUGGEST[suggestKey()];
   $('#suggest').innerHTML = list.map(([l,t,open],i)=>`<button data-s="${i}" title="${esc(t)}">${esc(l)}</button>`).join('');
   $('#msg').placeholder = win==='watch' ? 'Cửa sổ nhật ký, không cần nhắn.' : `Nhắn cho ${win==='lead'?'Lead':win}… (Enter để gửi, Shift+Enter xuống dòng, kéo thả hoặc dán ảnh/file vào đây)`;
 }
 $('#suggest').addEventListener('click',e=>{
   const b=e.target.closest('[data-s]'); if(!b) return;
-  const [,text,open] = SUGGEST[win==='lead'?'lead':'worker'][+b.dataset.s];
-  const m=$('#msg'); m.value = open ? text + m.value : text; m.focus(); m.setSelectionRange(m.value.length, m.value.length);
+  const [,text,open] = SUGGEST[suggestKey()][+b.dataset.s];
+  const openIt = open || /: $/.test(text);
+  const m=$('#msg'); m.value = openIt ? text + m.value : text; m.focus(); m.setSelectionRange(m.value.length, m.value.length);
 });
 
 function notifyChanges(){
@@ -876,7 +920,7 @@ async function refreshState(){
     $('#sdot').classList.toggle('on', isRunning());
     $('#stext').textContent = chatOn() ? `đang chạy (chat) · ${state.chat.agents.length} agent` : state.running ? `đang chạy (terminal) · ${state.windows.length} window` : `chưa chạy`;
     $('#stext').parentElement.title = state.project.path + ' · phiên tmux ' + state.session;
-    renderBoard(); renderTabs(); notifyChanges(); notifyAgents(); renderBanner(); renderReqs();
+    renderBoard(); renderTabs(); notifyChanges(); notifyAgents(); renderBanner(); renderReqs(); renderRes();
     if($('#dlgAgents').open && !agEditing && !agDrag && !document.activeElement?.closest?.('#agTree')) renderAgents();
     $('#btnCleanup').hidden = !state.tasks.some(t=>t.status==='done'); $('#btnClearChat').hidden = !isRunning();
   }catch(e){$('#stext').textContent='mất kết nối tới server'; $('#sdot').classList.remove('on')}
@@ -1123,7 +1167,7 @@ async function startAgents(){
   $('#btnStart').disabled=true;
   try{
     const names = resolveNames(cfg.workers), ws = cfg.workers.map((w,i)=>({...w, name:names[i]}));
-    if(cfg.mode==='terminal'){ const r=await api('POST','/api/start',{lead:cfg.lead, workers:ws}); toast(r.out||'Đã start','ok') }
+    if(cfg.mode==='terminal' && !isOffice()){ const r=await api('POST','/api/start',{lead:cfg.lead, workers:ws}); toast(r.out||'Đã start','ok') }
     else { await api('POST','/api/chatmode/start',{lead:cfg.lead, workers:ws}); win='lead'; localSet('win.'+proj,win); chatSig=''; toast('Đã sẵn sàng. Nhắn cho Lead ở khung chat nhé.','ok') }
   }catch(e){toast(e.message,'err')}
   $('#btnStart').disabled=false; await refreshState(); loadProjects().catch(()=>{});
@@ -1193,6 +1237,51 @@ $('#dnCreate').onclick = async()=>{
     $('#dlgNew').close(); refreshState();
   }catch(e){toast(e.message,'err')}
 };
+
+// ---------------------------------------------------------------- tài nguyên
+const resIcon = (r)=> !r.exists ? '⚠️' : r.unity ? '🎮' : r.isDir ? '📁' : '📄';
+function renderRes(){
+  const list = state?.resources || [];
+  $('#resCount').textContent = list.length ? ` (${list.length})` : '';
+  if(!$('#dlgRes').open) return;
+  $('#resProj').textContent = '· ' + (state?.project?.name||'');
+  $('#resHint').textContent = isOffice()
+    ? 'Project điều hành chỉ chứa task và chat. Thêm vào đây các folder hoặc file thật mà agent cần đọc và sửa (code, tài liệu, dữ liệu). Agent sửa thẳng vào đó, không có nhánh hay bước gộp, nên hai agent đừng sửa cùng một file. Git: chỉ agent "git" chạy commit, pull, merge, push; push vẫn cần bạn bấm "Cho phép". Thêm hoặc bỏ mục xong thì áp dụng từ lượt nhắn tiếp theo của agent, không cần Start lại.'
+    : 'Agent đọc và sửa thẳng vào các mục này (không có nhánh), ngoài thư mục của project. Git trong các thư mục này do Lead lo. Thêm hoặc bỏ mục xong thì áp dụng từ lượt nhắn tiếp theo của agent.';
+  $('#resList').innerHTML = list.length ? list.map(r=>`<div class="agrow" data-path="${esc(r.path)}"><span>${resIcon(r)}</span><b>${esc(r.name)}</b>
+      <span class="hint" title="${esc(r.path)}" style="max-width:360px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(r.path)}</span>
+      ${r.unity?'<span class="pill">Unity</span>':''}${r.isRepo?'<span class="pill">git</span>':''}${r.exists?'':'<span class="pill wait"><span class="dot"></span>không còn</span>'}<span class="spacer"></span>
+      ${r.needsIgnore?'<button class="small resIgnore" title="Project Unity này có git nhưng chưa có .gitignore: tạo file chuẩn để không commit Library, Temp...">Tạo .gitignore Unity</button>':''}
+      <button class="small danger resDel" title="Bỏ khỏi danh sách (không xoá file nào)">✕</button></div>`).join('')
+    : '<span class="hint">Chưa có tài nguyên nào. Thêm ở ô bên dưới.</span>';
+}
+function openRes(){ $('#fsBox').hidden = true; if(!$('#dlgRes').open) $('#dlgRes').showModal(); renderRes() }
+$('#btnRes').onclick = openRes;
+$('#resClose').onclick = ()=>$('#dlgRes').close();
+$('#resBrowse').onclick = ()=>{ const box=$('#fsBox'); if(fsTarget!=='res' || box.hidden){ fsTarget='res'; $('#resBrowse').closest('.row').after(box); box.hidden=false; fsOpen($('#resPath').value.trim() || localGet('fsDir') || '') } else box.hidden=true };
+$('#resNative').onclick = async()=>{
+  $('#resNative').disabled=true; toast('Đang mở hộp thoại chọn thư mục của Windows (có thể nằm sau cửa sổ này)…');
+  try{const r=await api('POST','/api/fs/pick'); if(r.path) $('#resPath').value=r.path}catch(e){toast(e.message,'err')}
+  $('#resNative').disabled=false;
+};
+$('#resAdd').onclick = async()=>{
+  const path = $('#resPath').value.trim(); if(!path){ toast('Chọn hoặc nhập đường dẫn','err'); return }
+  $('#resAdd').disabled=true;
+  try{ await api('POST','/api/resources',{path}); $('#resPath').value=''; $('#fsBox').hidden=true; toast('Đã thêm tài nguyên','ok'); await refreshState(); renderRes() }catch(e){ toast(e.message,'err') }
+  $('#resAdd').disabled=false;
+};
+$('#resList').addEventListener('click',async e=>{
+  const row = e.target.closest('[data-path]'); if(!row) return; const p = row.dataset.path;
+  try{
+    if(e.target.closest('.resDel')){
+      if(!confirm('Bỏ mục này khỏi danh sách tài nguyên? Không có file nào bị xoá.\n'+p)) return;
+      await api('DELETE','/api/resources?path='+encodeURIComponent(p)); toast('Đã bỏ khỏi danh sách','ok');
+    } else if(e.target.closest('.resIgnore')){
+      await api('POST','/api/resources/unity-ignore',{path:p}); toast('Đã tạo .gitignore cho project Unity (chưa commit, agent git sẽ commit khi bạn nhờ).','ok');
+    } else return;
+    await refreshState(); renderRes();
+  }catch(x){ toast(x.message,'err') }
+});
 
 (async()=>{
   try{ catalog = await (await fetch('/api/catalog')).json() }catch{}
