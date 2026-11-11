@@ -38,6 +38,14 @@ Nâng cấp chính Agent-Squad bằng agent: chọn project Agent-Squad trên da
     agent mới được ghi vào `.agents/hierarchy.txt` dưới quyền agent đã xin.
     Ảnh và file: dán, kéo thả hoặc đính kèm vào ô nhắn (lưu ở `.agents/uploads/`, tối đa 20 MB); ảnh và file agent nhắc tới
     hoặc vừa sửa hiện ngay trong chat, bấm để xem hoặc tải về (chỉ mở được file trong project).
+  - **🗂 Project điều hành** ("+ Project" > "Điều hành (không git)"): thư mục chỉ chứa task, chat và quy ước, không có git, không có bản sao riêng
+    cho từng worker (mọi agent làm ngay trong đó). Chỉ chạy ở kiểu Chat. Dữ liệu thật (code, tài liệu, dữ liệu) ở nơi khác trên máy.
+  - **📁 Tài nguyên** (mọi loại project): folder hoặc file bạn khai báo để agent đọc và **sửa tại chỗ** (không chỉ đọc, không nhánh, không bước gộp).
+    Lưu trong `~/.agent-squad/projects.json`, đổi xong áp dụng từ lượt nhắn sau. Nhận ra project Unity (Assets + ProjectSettings): thêm quy ước
+    cho agent (không đụng Library/Temp, giữ file .meta) và nút tạo `.gitignore` Unity khi repo chưa có.
+  - **🔀 Agent git** (project điều hành): tự có một agent tên `git` (Claude, model haiku) là agent duy nhất chạy commit/pull/merge/push trong các
+    thư mục tài nguyên; Lead giao việc cho nó bằng task `Owner: git`. Các agent khác bị dặn không chạy git ở đó. Push vẫn cần bạn bấm "Cho phép".
+    Không dùng Codex cho agent này vì sandbox của Codex không ghi được `.git`.
   - **🌳 Agents**: xem cây phân cấp, kéo thả để đổi cấp trên (ghi vào `.agents/hierarchy.txt`); ở kiểu Chat còn thêm,
     đổi tên, đổi model/effort và xoá agent (cấp dưới chuyển lên cấp trên, task đang giữ về Todo, worktree được giữ lại).
   - **📊 Token**: số token mỗi agent đã dùng và tỉ lệ % theo Claude / Codex / Gemini (kiểu Chat, lưu ở `.agents/chat/usage.json`).

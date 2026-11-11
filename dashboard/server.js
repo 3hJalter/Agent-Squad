@@ -96,11 +96,25 @@ function normPath(input) {
 }
 const scriptEnv = (ctx, extra = {}) => ({ ...process.env, AGENTS_ROOT: ctx.root, SESSION: ctx.session, ...extra });
 
-async function scaffoldState(root) {
+async function scaffoldState(root, office) {
   const missing = ['AGENTS.md', 'CLAUDE.md', 'scripts/assign.sh', '.agents/tasks/_template.md'].filter((f) => !fs.existsSync(path.join(root, f)));
+  if (office) return { missing, needsCommit: false }; // project điều hành không dùng git
   const st = await run('git', ['-C', root, 'status', '--porcelain', '--', 'AGENTS.md', 'CLAUDE.md', 'scripts', '.gitignore']);
   const head = await run('git', ['-C', root, 'rev-parse', 'HEAD']);
   return { missing, needsCommit: !head.ok || st.out.trim().length > 0 };
+}
+// Dựng file khung trong thư mục KHÔNG phải repo git (project điều hành): setup-agents.sh đòi có .git nên tạo tạm rồi bỏ
+async function scaffoldOffice(root) {
+  const g = path.join(root, '.git'), ig = path.join(root, '.gitignore');
+  const hadGit = fs.existsSync(g), hadIgnore = fs.existsSync(ig);
+  if (!hadGit) fs.mkdirSync(g);
+  try {
+    const r = await run('bash', [path.join(SCRIPTS, 'setup-agents.sh')], { cwd: root });
+    return (r.out + r.err).trim();
+  } finally {
+    if (!hadGit) fs.rmSync(g, { recursive: true, force: true });
+    if (!hadIgnore) fs.rmSync(ig, { force: true });
+  }
 }
 
 // ---------------------------------------------------------------- tasks
@@ -265,7 +279,7 @@ on('GET', /^\/api\/projects$/, async (req, res) => {
   const list = await Promise.all(loadProjects().map(async (p) => {
     const c = withCtx(p);
     const has = await tmux('has-session', '-t', c.session);
-    return { id: p.id, name: p.name, path: p.path, session: c.session, running: has.ok, exists: fs.existsSync(p.path) };
+    return { id: p.id, name: p.name, path: p.path, kind: p.kind || '', session: c.session, running: has.ok, exists: fs.existsSync(p.path) };
   }));
   send(res, 200, { projects: list });
 });
@@ -331,6 +345,16 @@ on('POST', /^\/api\/projects\/new$/, async (req, res) => {
   if (fs.existsSync(dir) && fs.readdirSync(dir).length) return send(res, 400, { error: `Thư mục ${dir} đã có và không trống. Dùng "Thêm project có sẵn" hoặc đặt tên khác.` });
   try { fs.mkdirSync(dir, { recursive: true }); } catch (e) { return send(res, 400, { error: e.message }); }
   if (b.description) fs.writeFileSync(path.join(dir, 'README.md'), `# ${name}\n\n${String(b.description).trim()}\n`);
+  if (b.office) {
+    // project điều hành: chỉ chứa task / chat / quy ước, không git; dữ liệu thật nằm ở các thư mục "Tài nguyên"
+    const list = loadProjects();
+    let id = slug(name), n = 2;
+    while (list.some((x) => x.id === id)) id = `${slug(name)}-${n++}`;
+    const p = { id, name, path: dir, kind: 'office', resources: [] };
+    list.push(p); saveProjects(list);
+    const setup = await scaffoldOffice(dir);
+    return send(res, 200, { project: p, created: true, setup, office: true, ...(await scaffoldState(dir, true)) });
+  }
   const r = await addProject(dir, name, true);
   send(res, r.code, r.body);
 });
@@ -441,14 +465,105 @@ on('POST', /^\/api\/projects\/commit$/, async (req, res, _m, url) => {
   send(res, c.ok ? 200 : 500, { ok: c.ok, out: (c.out + c.err).trim() });
 });
 
+on('POST', /^\/api\/office\/scaffold$/, async (req, res, _m, url) => {
+  const ctx = getCtx(url);
+  if (ctx.kind !== 'office') return send(res, 400, { error: 'Chỉ dùng cho project điều hành.' });
+  send(res, 200, { ok: true, out: await scaffoldOffice(ctx.root) });
+});
+
+// --- tài nguyên: folder/file ngoài project mà agent được đọc và sửa tại chỗ (xem chat.js: resourceInfo)
+const tooWide = (p) => p === '/' || p === os.homedir() || /^\/mnt\/[a-z]$/.test(p);
+function editProject(ctx, fn) {
+  const list = loadProjects();
+  const p = list.find((x) => x.id === ctx.id);
+  if (!p) return false;
+  p.resources = Array.isArray(p.resources) ? p.resources : [];
+  const r = fn(p);
+  saveProjects(list);
+  return r;
+}
+on('POST', /^\/api\/resources$/, async (req, res, _m, url) => {
+  const ctx = getCtx(url);
+  const b = await readBody(req);
+  if (!String(b.path || '').trim()) return send(res, 400, { error: 'Chọn hoặc nhập đường dẫn' });
+  let p = normPath(b.path);
+  try { p = fs.realpathSync(p); } catch { return send(res, 400, { error: `Không có đường dẫn ${p}` }); }
+  if (tooWide(p)) return send(res, 400, { error: 'Thư mục này quá rộng (cả ổ đĩa hoặc cả thư mục Home). Hãy chọn một thư mục cụ thể.' });
+  if (p === ctx.root || p.startsWith(ctx.root + path.sep)) return send(res, 400, { error: 'Đường dẫn này đã nằm trong project, không cần thêm.' });
+  const err = editProject(ctx, (pr) => {
+    if (pr.resources.some((r) => r.path === p)) return 'Đã có trong danh sách.';
+    pr.resources.push({ path: p });
+    return '';
+  });
+  if (err === false) return send(res, 404, { error: 'Không có project' });
+  if (err) return send(res, 400, { error: err });
+  send(res, 200, { ok: true, resources: chat.resourceInfo(withCtx(loadProjects().find((x) => x.id === ctx.id))) });
+});
+on('DELETE', /^\/api\/resources$/, (req, res, _m, url) => {
+  const ctx = getCtx(url);
+  const p = url.searchParams.get('path');
+  const ok = editProject(ctx, (pr) => { const n = pr.resources.length; pr.resources = pr.resources.filter((r) => r.path !== p); return n !== pr.resources.length; });
+  if (!ok) return send(res, 404, { error: 'Không có mục này' });
+  send(res, 200, { ok: true });
+});
+// .gitignore chuẩn cho project Unity (chỉ tạo khi chưa có, và chỉ khi bạn bấm nút)
+const UNITY_IGNORE = `# Unity (tạo bởi Agent-Squad)
+[Ll]ibrary/
+[Tt]emp/
+[Oo]bj/
+[Bb]uild/
+[Bb]uilds/
+[Ll]ogs/
+[Uu]ser[Ss]ettings/
+[Mm]emoryCaptures/
+[Rr]ecordings/
+.vs/
+.idea/
+.gradle/
+ExportedObj/
+*.csproj
+*.unityproj
+*.sln
+*.suo
+*.tmp
+*.user
+*.userprefs
+*.pidb
+*.booproj
+*.svd
+*.pdb
+*.mdb
+*.opendb
+*.VC.db
+sysinfo.txt
+*.apk
+*.aab
+*.unitypackage
+crashlytics-build.properties
+/[Aa]ssets/[Aa]ddressable[Aa]ssets[Dd]ata/*/*.bin*
+/[Aa]ssets/[Ss]treamingAssets/aa.meta
+/[Aa]ssets/[Ss]treamingAssets/aa/*
+`;
+on('POST', /^\/api\/resources\/unity-ignore$/, async (req, res, _m, url) => {
+  const ctx = getCtx(url);
+  const b = await readBody(req);
+  const r = chat.resourceInfo(ctx).find((x) => x.path === b.path);
+  if (!r || !r.unity || !r.isRepo) return send(res, 400, { error: 'Không phải project Unity có git.' });
+  const f = path.join(r.path, '.gitignore');
+  if (fs.existsSync(f)) return send(res, 400, { error: 'Đã có .gitignore, không ghi đè.' });
+  fs.writeFileSync(f, UNITY_IGNORE);
+  send(res, 200, { ok: true });
+});
+
 // --- state / tasks
 on('GET', /^\/api\/state$/, async (req, res, _m, url) => {
   const ctx = getCtx(url);
   let workersTxt = '';
   try { workersTxt = fs.readFileSync(path.join(ctx.root, '.agents', 'workers.txt'), 'utf8'); } catch { /* chưa start */ }
   send(res, 200, {
-    project: { id: ctx.id, name: ctx.name, path: ctx.root }, session: ctx.session,
-    ...(await sessionInfo(ctx)), chat: chat.info(ctx), requests: chat.listRequests(ctx), tasks: listTasks(ctx), workersTxt, hierarchy: readHierarchy(ctx), ...(await scaffoldState(ctx.root)),
+    project: { id: ctx.id, name: ctx.name, path: ctx.root, kind: ctx.kind || '' }, session: ctx.session,
+    ...(await sessionInfo(ctx)), chat: chat.info(ctx), requests: chat.listRequests(ctx), tasks: listTasks(ctx), workersTxt, hierarchy: readHierarchy(ctx),
+    resources: chat.resourceInfo(ctx), ...(await scaffoldState(ctx.root, ctx.kind === 'office')),
   });
 });
 
@@ -558,6 +673,7 @@ on('POST', /^\/api\/send$/, async (req, res, _m, url) => {
 
 on('POST', /^\/api\/start$/, async (req, res, _m, url) => {
   const ctx = getCtx(url);
+  if (ctx.kind === 'office') return send(res, 400, { error: 'Project điều hành chỉ chạy ở kiểu Chat (không có git và bản sao riêng cho từng worker).' });
   const b = await readBody(req);
   const lead = specOf({ ...b.lead, name: '' }) || 'claude';
   const workers = (Array.isArray(b.workers) ? b.workers : []).map(specOf).filter(Boolean).join(' ') || 'codex';
