@@ -77,6 +77,12 @@ const GIT_ROLE = ' YOU ARE THE GIT AGENT. Your only job is git on the resource f
 const UNITY_NOTE = ' UNITY: resources marked [Unity project] are Unity projects. Never touch Library/, Temp/, Obj/, Logs/, Build/, Builds/ or UserSettings/. ' +
   'Every asset has a .meta file: move or rename an asset together with its .meta, never delete a .meta alone, never invent GUIDs. ' +
   'Edit .unity and .prefab files only if the task says so, with minimal changes. You cannot run the Unity Editor: say what the human should test in Unity.';
+// context-mode (https://github.com/mksglu/context-mode): MCP server giữ dữ liệu lớn ở ngoài ngữ cảnh. Thử nghiệm, chỉ cho agent Claude, bật theo project.
+const CM_SERVER = 'context-mode';
+const CM_MCP = JSON.stringify({ mcpServers: { [CM_SERVER]: { command: 'npx', args: ['-y', 'context-mode'] } } });
+const CM_NOTE = ' CONTEXT-MODE: to keep your context small, when a command or file read would print a lot (many files, long logs, big JSON), do not dump it: ' +
+  'use the MCP tools ctx_execute / ctx_execute_file / ctx_batch_execute (run a small script and print only the result) and ctx_search / ctx_index to look things up later. ' +
+  'For small reads and for editing files use your normal tools.';
 const RES_REMOVED = ' RESOURCES: the list of resource folders is now empty. Do not touch folders you were given before.';
 const GRANT_RE = /^(network|[A-Za-z_][A-Za-z0-9_]{0,40}(\([^\n]{1,300}\))?)$/;
 const workerRole = (name, agentsDir) => `You are a WORKER named "${name}" (chat mode, no tmux), not the lead: ignore the LEAD rules in CLAUDE.md ` +
@@ -155,10 +161,11 @@ module.exports = function setupChat({ on, send, readBody, getCtx, loadProjects, 
       (name === 'lead' && gitOwner === 'git' ? ' To save work to git or push it, create a task with "Owner: git", "Created by: lead", "Status: ready" whose Goal names the repo path, the commit message, and whether to pull and push.' : '') +
       (rs.some((r) => r.unity) ? UNITY_NOTE : '');
   }
+  const useCm = (ctx, a) => !!ctx.contextMode && a?.agent === 'claude';
   function sysPrompt(ctx, name, a, extraDir) {
     const office = ctx.kind === 'office';
     const base = name === 'lead' ? LEAD_ROLE : workerRole(name, !office && noLink(a) && extraDir);
-    return base + (office ? OFFICE_NOTE : '') + resourcesNote(ctx, name) + (office && name === 'git' ? GIT_ROLE : '') + helperHint(name, extraDir);
+    return base + (office ? OFFICE_NOTE : '') + resourcesNote(ctx, name) + (office && name === 'git' ? GIT_ROLE : '') + (useCm(ctx, a) ? CM_NOTE : '') + helperHint(name, extraDir);
   }
 
   // ------------------------------------------------------------ lệnh chạy từng agent
@@ -168,7 +175,8 @@ module.exports = function setupChat({ on, send, readBody, getCtx, loadProjects, 
     const extraDir = path.join(ctx.root, '.agents');
     if (a.agent === 'claude') {
       const args = ['-p', '--output-format', 'stream-json', '--verbose', '--permission-mode', 'acceptEdits',
-        '--allowedTools', ...CLAUDE_TOOLS, ...tools, '--add-dir', extraDir, ...resDirs(ctx),
+        '--allowedTools', ...CLAUDE_TOOLS, ...tools, ...(useCm(ctx, a) ? ['mcp__' + CM_SERVER] : []),
+        ...(useCm(ctx, a) ? ['--mcp-config', CM_MCP] : []), '--add-dir', extraDir, ...resDirs(ctx),
         '--append-system-prompt', sysPrompt(ctx, name, a, extraDir)];
       if (a.model) args.push('--model', a.model);
       if (a.effort) args.push('--effort', a.effort);
@@ -238,6 +246,10 @@ module.exports = function setupChat({ on, send, readBody, getCtx, loadProjects, 
     return (ev) => {
       if (agent === 'claude') {
         if (ev.type === 'system' && ev.subtype === 'init' && ev.session_id) onSession(ev.session_id);
+        if (ev.type === 'system' && ev.subtype === 'init' && msg.cm) {
+          const m = (ev.mcp_servers || []).find((x) => x.name === CM_SERVER);
+          if (!m || m.status !== 'connected') steps.push({ icon: '⚠️', error: true, title: 'context-mode không chạy được (cần Node.js 22.5 trở lên, và có mạng ở lần chạy đầu để tải về). Agent vẫn làm việc bình thường, chỉ là không có context-mode.' });
+        }
         if (ev.type === 'assistant') for (const c of ev.message?.content || []) {
           if (c.type === 'text' && c.text.trim()) msg.text += (msg.text ? '\n\n' : '') + c.text.trim();
           if (c.type === 'tool_use') { stash(); const s = toolStep(c.name, c.input); byId.set(c.id, s); steps.push(s); }
@@ -361,7 +373,7 @@ module.exports = function setupChat({ on, send, readBody, getCtx, loadProjects, 
     }
     if (prev !== sig) { st.resSig = st.resSig || {}; st.resSig[name] = sig; saveState(ctx, st); }
     const { cmd, args, stdin } = buildCmd(ctx, name, a, st.sessions[name], text, (st.grants || {})[name] || []);
-    const msg = newMsg('agent', '', { steps: [], running: true, agent: a.agent });
+    const msg = newMsg('agent', '', { steps: [], running: true, agent: a.agent, ...(useCm(ctx, a) ? { cm: true } : {}) });
     L.msg = msg;
     const parse = makeParser(a.agent, msg, (sid) => { const s2 = loadState(ctx); s2.sessions[name] = sid; saveState(ctx, s2); });
     let child;
@@ -395,7 +407,7 @@ module.exports = function setupChat({ on, send, readBody, getCtx, loadProjects, 
       delete msg.running; L.child = null; L.msg = null; L.stopped = false;
       if (!msg.text && !msg.error && !msg.steps.length) msg.text = '(không có trả lời)';
       try { const fl = filesOf(ctx, a, msg); if (fl.length) msg.files = fl; } catch { /* không bắt buộc */ }
-      if (msg.usage) { try { addUsage(ctx, name, a, msg.usage); } catch (e) { console.error('usage:', e.message); } }
+      if (msg.usage) { try { addUsage(ctx, name, a, msg.usage, !!msg.cm); } catch (e) { console.error('usage:', e.message); } }
       addMessage(ctx, name, msg);
       if (gitByDashboard(ctx, name, a)) {
         L.committing = true;
@@ -469,10 +481,10 @@ module.exports = function setupChat({ on, send, readBody, getCtx, loadProjects, 
     try { const u = JSON.parse(fs.readFileSync(usageFile(ctx), 'utf8')); if (u && typeof u.days === 'object') return u; } catch { /* chưa có */ }
     return { days: {} };
   }
-  function addUsage(ctx, name, a, u) {
+  function addUsage(ctx, name, a, u, cm) {
     const all = loadUsage(ctx);
     const day = all.days[dayKey()] || (all.days[dayKey()] = {});
-    const k = `${name}|${a.agent}|${a.model || ''}`;
+    const k = `${name}|${a.agent}|${a.model || ''}` + (cm ? '|cm' : '');
     const r = day[k] || (day[k] = { in: 0, out: 0, cached: 0, cost: 0, turns: 0 });
     r.in += u.in; r.out += u.out; r.cached += u.cached || 0; r.cost += u.cost || 0; r.turns += 1;
     fs.mkdirSync(dir(ctx), { recursive: true });
@@ -486,8 +498,8 @@ module.exports = function setupChat({ on, send, readBody, getCtx, loadProjects, 
     for (const d of days) {
       if (d < from) continue;
       for (const [k, v] of Object.entries(all.days[d])) {
-        const [name, agent, model] = k.split('|');
-        const r = rows.get(k) || { name, agent, model, in: 0, out: 0, cached: 0, cost: 0, turns: 0 };
+        const [name, agent, model, cmFlag] = k.split('|');
+        const r = rows.get(k) || { name, agent, model, cm: cmFlag === 'cm', in: 0, out: 0, cached: 0, cost: 0, turns: 0 };
         r.in += v.in || 0; r.out += v.out || 0; r.cached += v.cached || 0; r.cost += v.cost || 0; r.turns += v.turns || 0;
         rows.set(k, r);
       }

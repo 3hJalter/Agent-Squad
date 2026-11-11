@@ -49,6 +49,10 @@ Nâng cấp chính Agent-Squad bằng agent: chọn project Agent-Squad trên da
   - **🌳 Agents**: xem cây phân cấp, kéo thả để đổi cấp trên (ghi vào `.agents/hierarchy.txt`); ở kiểu Chat còn thêm,
     đổi tên, đổi model/effort và xoá agent (cấp dưới chuyển lên cấp trên, task đang giữ về Todo, worktree được giữ lại).
   - **📊 Token**: số token mỗi agent đã dùng và tỉ lệ % theo Claude / Codex / Gemini (kiểu Chat, lưu ở `.agents/chat/usage.json`).
+  - **⚡ context-mode** (thử nghiệm, "Chọn agent & model", tắt mặc định, theo project): agent Claude nạp MCP server
+    [mksglu/context-mode](https://github.com/mksglu/context-mode) (`npx -y context-mode`, cần Node.js 22.5+) để dữ liệu lớn (log dài, nhiều file) không đổ hết vào ngữ cảnh.
+    Chỉ cho Claude, đổi xong áp dụng từ lượt sau. Rủi ro: nó cho agent chạy code trong ô riêng, nằm ngoài danh sách lệnh an toàn và nút "Cho phép"
+    (dashboard hỏi lại khi bật). Bảng Token đánh dấu ⚡ và có cột TB/lượt để so sánh trước và sau.
   - **🔔 Báo**: tiếng và thông báo trình duyệt khi task xong, bị chặn, agent cần quyền hoặc Lead trả lời xong.
   - Kéo thanh giữa khung task và chat để đổi độ rộng, kéo thanh trên ô nhắn để đổi chiều cao (bấm đúp để về mặc định).
   - **🖥 Terminal**: như cũ, mỗi agent một window tmux, dashboard hiện màn hình terminal.

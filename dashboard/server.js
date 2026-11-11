@@ -471,6 +471,16 @@ on('POST', /^\/api\/office\/scaffold$/, async (req, res, _m, url) => {
   send(res, 200, { ok: true, out: await scaffoldOffice(ctx.root) });
 });
 
+// Cài đặt theo project (hiện chỉ có context-mode: thử nghiệm, tắt mặc định)
+on('POST', /^\/api\/project\/settings$/, async (req, res, _m, url) => {
+  const ctx = getCtx(url);
+  const b = await readBody(req);
+  if (typeof b.contextMode !== 'boolean') return send(res, 400, { error: 'Thiếu contextMode' });
+  const ok = editProject(ctx, (pr) => { pr.contextMode = b.contextMode; return true; });
+  if (!ok) return send(res, 404, { error: 'Không có project' });
+  send(res, 200, { ok: true, contextMode: b.contextMode });
+});
+
 // --- tài nguyên: folder/file ngoài project mà agent được đọc và sửa tại chỗ (xem chat.js: resourceInfo)
 const tooWide = (p) => p === '/' || p === os.homedir() || /^\/mnt\/[a-z]$/.test(p);
 function editProject(ctx, fn) {
@@ -561,7 +571,7 @@ on('GET', /^\/api\/state$/, async (req, res, _m, url) => {
   let workersTxt = '';
   try { workersTxt = fs.readFileSync(path.join(ctx.root, '.agents', 'workers.txt'), 'utf8'); } catch { /* chưa start */ }
   send(res, 200, {
-    project: { id: ctx.id, name: ctx.name, path: ctx.root, kind: ctx.kind || '' }, session: ctx.session,
+    project: { id: ctx.id, name: ctx.name, path: ctx.root, kind: ctx.kind || '', contextMode: !!ctx.contextMode }, session: ctx.session,
     ...(await sessionInfo(ctx)), chat: chat.info(ctx), requests: chat.listRequests(ctx), tasks: listTasks(ctx), workersTxt, hierarchy: readHierarchy(ctx),
     resources: chat.resourceInfo(ctx), ...(await scaffoldState(ctx.root, ctx.kind === 'office')),
   });
