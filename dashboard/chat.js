@@ -58,10 +58,14 @@ const LEAD_ROLE = 'You are the LEAD of Agent-Squad, chatting with the human thro
 const GRANT_RE = /^(network|[A-Za-z_][A-Za-z0-9_]{0,40}(\([^\n]{1,300}\))?)$/;
 const workerRole = (name, agentsDir) => `You are a WORKER named "${name}" (chat mode, no tmux), not the lead: ignore the LEAD rules in CLAUDE.md ` +
   'and follow the worker rules in AGENTS.md. Be terse.' +
-  (agentsDir ? ` Your worktree has no .agents folder: wherever the rules or messages say ".agents/", use ${agentsDir}/ instead.` : '');
+  (agentsDir ? ` Your worktree has no .agents folder: wherever the rules or messages say ".agents/", use ${agentsDir}/ instead.` +
+    ' Your sandbox cannot write .git: never run git merge/commit/add/stash/checkout; the dashboard merges before each task and commits after each turn.' : '');
 // Codex chặn mọi lệnh khi .agents trong worktree là symlink ("crosses a writable symlink"), nên worker
 // Codex không có symlink .agents mà dùng đường dẫn tuyệt đối <repo>/.agents (đã cho quyền bằng --add-dir).
 const noLink = (a) => a?.agent === 'codex';
+// Sandbox của Codex không cho ghi vào .git (ORIG_HEAD.lock, index.lock...), nên với worker Codex dashboard tự làm phần git:
+// merge nhánh chính vào worktree trước khi giao việc, và commit thay đổi sau mỗi lượt.
+const gitByDashboard = (name, a) => name !== 'lead' && a?.agent === 'codex';
 
 module.exports = function setupChat({ on, send, readBody, getCtx, loadProjects, withCtx, run }) {
   const live = new Map(); // key root|name -> { child, msg, queue: [] }
@@ -245,12 +249,12 @@ module.exports = function setupChat({ on, send, readBody, getCtx, loadProjects, 
   }
 
   // ------------------------------------------------------------ chạy một lượt
-  function enqueue(ctx, name, text, display) {
+  function enqueue(ctx, name, text, display, extra = {}) {
     const k = key(ctx, name);
     if (!live.has(k)) live.set(k, { child: null, msg: null, queue: [] });
     const L = live.get(k);
-    L.queue.push({ text, display });
-    if (!L.child) next(ctx, name);
+    L.queue.push({ text, display, ...extra });
+    if (!L.child && !L.committing) next(ctx, name);
   }
   function next(ctx, name) {
     const L = live.get(key(ctx, name));
@@ -291,12 +295,32 @@ module.exports = function setupChat({ on, send, readBody, getCtx, loadProjects, 
       else if (code && !msg.error) msg.error = short(errTail.trim() || `Agent thoát với mã ${code}${signal ? ' (' + signal + ')' : ''}`, 800);
       finish();
     });
-    function finish() {
+    async function finish() {
       delete msg.running; L.child = null; L.msg = null; L.stopped = false;
       if (!msg.text && !msg.error && !msg.steps.length) msg.text = '(không có trả lời)';
       addMessage(ctx, name, msg);
+      if (gitByDashboard(name, a)) {
+        L.committing = true;
+        try {
+          const c = await autoCommit(a.cwd, `${job.taskId || 'work'}: changes by ${name}`);
+          if (c) addMessage(ctx, name, newMsg('system', c));
+        } catch (e) { addMessage(ctx, name, newMsg('system', 'Không commit được: ' + e.message)); }
+        L.committing = false;
+      }
       setImmediate(() => next(ctx, name));
     }
+  }
+
+  // commit mọi thay đổi trong worktree (trừ .agents); trả về câu báo hoặc '' nếu không có gì
+  async function autoCommit(cwd, message) {
+    const st = await run('git', ['-C', cwd, 'status', '--porcelain', '--', '.', ':(exclude).agents']);
+    if (!st.ok || !st.out.trim()) return '';
+    const id = await run('git', ['-C', cwd, 'config', 'user.email']);
+    const who = id.out.trim() ? [] : ['-c', 'user.name=Agent-Squad', '-c', 'user.email=agent-squad@localhost'];
+    await run('git', ['-C', cwd, 'add', '-A', '--', '.', ':(exclude).agents']);
+    const c = await run('git', ['-C', cwd, ...who, 'commit', '-m', message]);
+    if (!c.ok) throw new Error((c.out + c.err).trim().slice(0, 400));
+    return `💾 Dashboard đã commit thay đổi của lượt này (${st.out.trim().split('\n').length} file).`;
   }
 
   // ------------------------------------------------------------ khởi động / dừng
@@ -366,6 +390,15 @@ module.exports = function setupChat({ on, send, readBody, getCtx, loadProjects, 
   // ------------------------------------------------------------ tự giao task / báo lead
   const seen = new Map(); // root -> {id: status}
   function field(text, n) { const m = text.match(new RegExp('^' + n + ':[ \\t]*(.*)$', 'm')); return m ? m[1].trim() : ''; }
+  function parentOf(ctx, name) {
+    let text = '';
+    try { text = fs.readFileSync(path.join(ctx.root, '.agents', 'hierarchy.txt'), 'utf8'); } catch { return 'lead'; }
+    for (const line of text.split(/\r?\n/)) {
+      const m = line.replace(/#.*/, '').match(/^\s*(\S+)\s*<-\s*(\S+)\s*$/);
+      if (m && m[1] === name) return m[2];
+    }
+    return 'lead';
+  }
   async function dispatch() {
     for (const p of loadProjects()) {
       const ctx = withCtx(p);
@@ -383,16 +416,55 @@ module.exports = function setupChat({ on, send, readBody, getCtx, loadProjects, 
         try { text = fs.readFileSync(fp, 'utf8'); } catch { continue; }
         let status = field(text, 'Status').toLowerCase();
         const owner = field(text, 'Owner');
+        const creator = field(text, 'Created by') || 'lead';
         if (status === 'ready' && st.agents[owner] && owner !== 'lead') {
+          // phân cấp (.agents/hierarchy.txt, như scripts/assign.sh): chỉ cấp trên trực tiếp được giao việc;
+          // việc bạn giao từ dashboard ("Assigned by: human") thì luôn được.
+          const parent = parentOf(ctx, owner);
+          if (field(text, 'Assigned by').toLowerCase() !== 'human' && parent !== creator) {
+            const note = `- ${new Date().toISOString().slice(0, 16).replace('T', ' ')} Dashboard: không giao được, ${creator} không phải cấp trên trực tiếp của ${owner} (cấp trên: ${parent}) trong .agents/hierarchy.txt.`;
+            let t2 = text.replace(/^Status:.*$/m, 'Status: blocked');
+            t2 = /^## Notes/m.test(t2) ? t2.replace(/^(## Notes.*)$/m, `$1\n${note}`) : `${t2}\n## Notes / questions\n${note}\n`;
+            fs.writeFileSync(fp, t2);
+            last[id] = 'ready'; // để vòng sau báo người giao việc là task bị chặn
+            continue;
+          }
+          const base = (await run('git', ['-C', ctx.root, 'branch', '--show-current'])).out.trim();
+          const byDash = gitByDashboard(owner, st.agents[owner]);
+          if (byDash && base) {
+            const cwd = st.agents[owner].cwd;
+            await autoCommit(cwd, `wip: changes by ${owner} before ${id}`).catch(() => {});
+            const m = await run('git', ['-C', cwd, 'merge', '--no-edit', base]);
+            if (!m.ok) {
+              await run('git', ['-C', cwd, 'merge', '--abort']);
+              const note = `- ${new Date().toISOString().slice(0, 16).replace('T', ' ')} Dashboard: không merge được ${base} vào agent/${owner} (xung đột). Cần lead xử lý: ${(m.out + m.err).trim().split('\n').slice(-2).join(' ')}`;
+              let t2 = text.replace(/^Status:.*$/m, 'Status: blocked');
+              t2 = /^## Notes/m.test(t2) ? t2.replace(/^(## Notes.*)$/m, `$1\n${note}`) : `${t2}\n## Notes / questions\n${note}\n`;
+              fs.writeFileSync(fp, t2);
+              last[id] = 'ready';
+              continue;
+            }
+          }
           fs.writeFileSync(fp, text.replace(/^Status:.*$/m, 'Status: in-progress'));
           status = 'in-progress';
-          const base = (await run('git', ['-C', ctx.root, 'branch', '--show-current'])).out.trim();
-          const msg = `Do task ${id}: ${base ? `first run 'git merge --no-edit ${base}' to get the latest code (on conflicts set Status: blocked and explain), then ` : ''}` +
+          const msg = byDash
+            ? `Do task ${id}: the dashboard already merged ${base || 'the main branch'} into your branch and will commit your changes after your turn, ` +
+              'so do NOT run git merge or git commit (your sandbox cannot write .git). Skip those steps of the task protocol, ' +
+              `do everything else: read ${path.join(ctx.root, '.agents', 'tasks', id + '.md')} and AGENTS.md, follow the task protocol. Be terse.`
+            : `Do task ${id}: ${base ? `first run 'git merge --no-edit ${base}' to get the latest code (on conflicts set Status: blocked and explain), then ` : ''}` +
             `read ${noLink(st.agents[owner]) ? path.join(ctx.root, '.agents', 'tasks', id + '.md') : `.agents/tasks/${id}.md`} and AGENTS.md, follow the task protocol exactly. Be terse.`;
-          enqueue(ctx, owner, msg, { role: 'system', text: `📋 Nhận việc ${id}: ${(text.split('\n')[0] || '').replace(/^#\s*(T-\d+\s*:?\s*)?/, '')}` });
-        } else if (!first && last[id] !== status && (status === 'done' || status === 'blocked') && st.agents.lead) {
-          enqueue(ctx, 'lead', `Worker updated ${id}. Read only its Status and Result in .agents/tasks/${id}.md, then report to me in 3 lines max.`,
-            { role: 'system', text: `🔔 ${id} ${status === 'done' ? 'đã xong' : 'bị chặn'} (${owner}). Lead đang đọc kết quả…` });
+          enqueue(ctx, owner, msg, { role: 'system', text: `📋 Nhận việc ${id}: ${(text.split('\n')[0] || '').replace(/^#\s*(T-\d+\s*:?\s*)?/, '')}` }, { taskId: id });
+        } else if (!first && last[id] !== status && (status === 'done' || status === 'blocked')) {
+          // worker còn đang chạy hoặc dashboard đang commit hộ: đợi vòng sau để lead merge được bản đầy đủ
+          const Lo = live.get(key(ctx, owner));
+          if (Lo && (Lo.child || Lo.committing)) continue;
+          // báo người tạo task (dòng "Created by:", như scripts/notify.sh); không có agent đó thì báo lead
+          const to = st.agents[creator] ? creator : 'lead';
+          const file = noLink(st.agents[to]) ? path.join(ctx.root, '.agents', 'tasks', id + '.md') : `.agents/tasks/${id}.md`;
+          if (st.agents[to]) {
+            enqueue(ctx, to, `Worker updated ${id}. Read only its Status and Result in ${file}, then report ${to === 'lead' ? 'to me' : 'and continue your own task'} in 3 lines max.`,
+              { role: 'system', text: `🔔 ${id} ${status === 'done' ? 'đã xong' : 'bị chặn'} (${owner}). ${to === 'lead' ? 'Lead' : to} đang đọc kết quả…` });
+          }
         }
         last[id] = status;
       }
