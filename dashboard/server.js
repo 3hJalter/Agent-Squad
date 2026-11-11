@@ -598,12 +598,37 @@ on('POST', /^\/api\/upload$/, (req, res, _m, url) => new Promise((resolve) => {
   const finish = (code, body) => { if (!done) { done = true; send(res, code, body); resolve(); } };
   req.on('data', (c) => {
     size += c.length;
-    if (size > 25 * 1024 * 1024 && !done) { req.unpipe(out); out.destroy(); fs.rm(file, () => {}); finish(413, { error: 'File quá lớn (tối đa 25 MB)' }); }
+    if (size > 20 * 1024 * 1024 && !done) { req.unpipe(out); out.destroy(); fs.rm(file, () => {}); finish(413, { error: 'File quá lớn (tối đa 20 MB)' }); }
   });
   req.pipe(out);
   out.on('finish', () => finish(200, { path: file }));
   out.on('error', (e) => finish(500, { error: e.message }));
 }));
+
+// Xem / tải file trong project để hiện ảnh và file trong chat. Chỉ file nằm trong project hoặc worktree của agent.
+const IMG_TYPES = { '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.gif': 'image/gif', '.webp': 'image/webp', '.bmp': 'image/bmp', '.svg': 'image/svg+xml' };
+on('GET', /^\/api\/file$/, (req, res, _m, url) => {
+  const ctx = getCtx(url);
+  const f = chat.resolveFile(ctx, url.searchParams.get('path'));
+  if (!f) return send(res, 404, { error: 'Không mở được file này (không tồn tại hoặc nằm ngoài project).' });
+  if (url.searchParams.get('text')) {
+    const fd = fs.openSync(f.path, 'r');
+    const buf = Buffer.alloc(Math.min(f.size, 300 * 1024));
+    fs.readSync(fd, buf, 0, buf.length, 0); fs.closeSync(fd);
+    if (buf.includes(0)) return send(res, 200, { ...f, binary: true });
+    return send(res, 200, { ...f, text: buf.toString('utf8'), truncated: f.size > buf.length });
+  }
+  if (f.size > chat.MAX_FILE) return send(res, 413, { error: 'File quá lớn (tối đa 20 MB).' });
+  const type = IMG_TYPES[path.extname(f.path).toLowerCase()];
+  const inline = type && !url.searchParams.get('dl');
+  res.writeHead(200, {
+    'Content-Type': inline ? type : 'application/octet-stream', 'Content-Length': f.size, 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff',
+    // không cho file (ví dụ SVG) chạy script trong trang dashboard
+    'Content-Security-Policy': "default-src 'none'; style-src 'unsafe-inline'; sandbox",
+    'Content-Disposition': `${inline ? 'inline' : 'attachment'}; filename*=UTF-8''${encodeURIComponent(f.name)}`,
+  });
+  fs.createReadStream(f.path).on('error', () => res.destroy()).pipe(res);
+});
 
 const server = http.createServer(async (req, res) => {
   try {
