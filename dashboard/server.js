@@ -498,12 +498,15 @@ const chat = require('./chat')({ on, send, readBody, getCtx, loadProjects, withC
 const validAgent = (a) => !!specOf(a) && { name: a.name || '', agent: a.agent, model: a.model || '', effort: a.effort || '' };
 
 const assign = async (ctx, id, w) => {
-  if (!chat.isActive(ctx)) return run(path.join(SCRIPTS, 'assign.sh'), [id, w], { env: scriptEnv(ctx) });
+  // ASSIGN_BY=human: bạn giao từ dashboard, không cần đúng cấp trên trong .agents/hierarchy.txt
+  if (!chat.isActive(ctx)) return run(path.join(SCRIPTS, 'assign.sh'), [id, w], { env: scriptEnv(ctx, { ASSIGN_BY: 'human' }) });
   // chế độ chat: đặt Owner + Status: ready, bộ tự giao việc của chat.js sẽ chạy worker
   const f = taskPath(ctx, id);
   if (!fs.existsSync(f)) return { ok: false, out: '', err: 'Không có task' };
   if (!chat.info(ctx).agents.some((a) => a.name === w && a.name !== 'lead')) return { ok: false, out: '', err: `Không có worker ${w}` };
-  fs.writeFileSync(f, fs.readFileSync(f, 'utf8').replace(/^Owner:.*$/m, `Owner: ${w}`).replace(/^Status:.*$/m, 'Status: ready'));
+  let text = fs.readFileSync(f, 'utf8').replace(/^Owner:.*$/m, `Owner: ${w}`).replace(/^Status:.*$/m, 'Status: ready');
+  text = /^Assigned by:/m.test(text) ? text.replace(/^Assigned by:.*$/m, 'Assigned by: human') : text.replace(/^(Owner:.*)$/m, '$1\nAssigned by: human');
+  fs.writeFileSync(f, text);
   return { ok: true, out: `Đã giao ${id} cho ${w}`, err: '' };
 };
 

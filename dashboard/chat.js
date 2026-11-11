@@ -366,6 +366,15 @@ module.exports = function setupChat({ on, send, readBody, getCtx, loadProjects, 
   // ------------------------------------------------------------ tự giao task / báo lead
   const seen = new Map(); // root -> {id: status}
   function field(text, n) { const m = text.match(new RegExp('^' + n + ':[ \\t]*(.*)$', 'm')); return m ? m[1].trim() : ''; }
+  function parentOf(ctx, name) {
+    let text = '';
+    try { text = fs.readFileSync(path.join(ctx.root, '.agents', 'hierarchy.txt'), 'utf8'); } catch { return 'lead'; }
+    for (const line of text.split(/\r?\n/)) {
+      const m = line.replace(/#.*/, '').match(/^\s*(\S+)\s*<-\s*(\S+)\s*$/);
+      if (m && m[1] === name) return m[2];
+    }
+    return 'lead';
+  }
   async function dispatch() {
     for (const p of loadProjects()) {
       const ctx = withCtx(p);
@@ -383,16 +392,33 @@ module.exports = function setupChat({ on, send, readBody, getCtx, loadProjects, 
         try { text = fs.readFileSync(fp, 'utf8'); } catch { continue; }
         let status = field(text, 'Status').toLowerCase();
         const owner = field(text, 'Owner');
+        const creator = field(text, 'Created by') || 'lead';
         if (status === 'ready' && st.agents[owner] && owner !== 'lead') {
+          // phân cấp (.agents/hierarchy.txt, như scripts/assign.sh): chỉ cấp trên trực tiếp được giao việc;
+          // việc bạn giao từ dashboard ("Assigned by: human") thì luôn được.
+          const parent = parentOf(ctx, owner);
+          if (field(text, 'Assigned by').toLowerCase() !== 'human' && parent !== creator) {
+            const note = `- ${new Date().toISOString().slice(0, 16).replace('T', ' ')} Dashboard: không giao được, ${creator} không phải cấp trên trực tiếp của ${owner} (cấp trên: ${parent}) trong .agents/hierarchy.txt.`;
+            let t2 = text.replace(/^Status:.*$/m, 'Status: blocked');
+            t2 = /^## Notes/m.test(t2) ? t2.replace(/^(## Notes.*)$/m, `$1\n${note}`) : `${t2}\n## Notes / questions\n${note}\n`;
+            fs.writeFileSync(fp, t2);
+            last[id] = 'ready'; // để vòng sau báo người giao việc là task bị chặn
+            continue;
+          }
           fs.writeFileSync(fp, text.replace(/^Status:.*$/m, 'Status: in-progress'));
           status = 'in-progress';
           const base = (await run('git', ['-C', ctx.root, 'branch', '--show-current'])).out.trim();
           const msg = `Do task ${id}: ${base ? `first run 'git merge --no-edit ${base}' to get the latest code (on conflicts set Status: blocked and explain), then ` : ''}` +
             `read ${noLink(st.agents[owner]) ? path.join(ctx.root, '.agents', 'tasks', id + '.md') : `.agents/tasks/${id}.md`} and AGENTS.md, follow the task protocol exactly. Be terse.`;
           enqueue(ctx, owner, msg, { role: 'system', text: `📋 Nhận việc ${id}: ${(text.split('\n')[0] || '').replace(/^#\s*(T-\d+\s*:?\s*)?/, '')}` });
-        } else if (!first && last[id] !== status && (status === 'done' || status === 'blocked') && st.agents.lead) {
-          enqueue(ctx, 'lead', `Worker updated ${id}. Read only its Status and Result in .agents/tasks/${id}.md, then report to me in 3 lines max.`,
-            { role: 'system', text: `🔔 ${id} ${status === 'done' ? 'đã xong' : 'bị chặn'} (${owner}). Lead đang đọc kết quả…` });
+        } else if (!first && last[id] !== status && (status === 'done' || status === 'blocked')) {
+          // báo người tạo task (dòng "Created by:", như scripts/notify.sh); không có agent đó thì báo lead
+          const to = st.agents[creator] ? creator : 'lead';
+          const file = noLink(st.agents[to]) ? path.join(ctx.root, '.agents', 'tasks', id + '.md') : `.agents/tasks/${id}.md`;
+          if (st.agents[to]) {
+            enqueue(ctx, to, `Worker updated ${id}. Read only its Status and Result in ${file}, then report ${to === 'lead' ? 'to me' : 'and continue your own task'} in 3 lines max.`,
+              { role: 'system', text: `🔔 ${id} ${status === 'done' ? 'đã xong' : 'bị chặn'} (${owner}). ${to === 'lead' ? 'Lead' : to} đang đọc kết quả…` });
+          }
         }
         last[id] = status;
       }
