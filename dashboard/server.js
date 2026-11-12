@@ -76,6 +76,20 @@ function saveProjects(list) {
   fs.mkdirSync(CONF_DIR, { recursive: true });
   fs.writeFileSync(PROJECTS_FILE, JSON.stringify(list, null, 2));
 }
+// ---------------------------------------------------------------- tài khoản (hồ sơ đăng nhập)
+// Mỗi hồ sơ là một thư mục cấu hình riêng: Claude dùng CLAUDE_CONFIG_DIR, Codex dùng CODEX_HOME (xem chat.js).
+const ACCOUNTS_FILE = path.join(CONF_DIR, 'accounts.json');
+const ACCOUNTS_DIR = path.join(CONF_DIR, 'accounts');
+function loadAccounts() {
+  try { const l = JSON.parse(fs.readFileSync(ACCOUNTS_FILE, 'utf8')); return Array.isArray(l) ? l.filter((a) => a && a.id && a.dir && a.dir.startsWith(ACCOUNTS_DIR + path.sep)) : []; } catch { return []; }
+}
+function saveAccounts(list) { fs.mkdirSync(CONF_DIR, { recursive: true }); fs.writeFileSync(ACCOUNTS_FILE, JSON.stringify(list, null, 2)); }
+// đã đăng nhập chưa (ước đoán theo file đăng nhập mà từng công cụ tạo ra)
+const loggedIn = (a) => fs.existsSync(path.join(a.dir, a.agent === 'claude' ? '.credentials.json' : 'auth.json'));
+const accountView = (a) => ({ id: a.id, name: a.name, agent: a.agent, dir: a.dir, loggedIn: loggedIn(a),
+  loginCmd: a.agent === 'claude' ? `CLAUDE_CONFIG_DIR='${a.dir}' claude` : `CODEX_HOME='${a.dir}' codex login`,
+  loginHint: a.agent === 'claude' ? 'Trong cửa sổ hiện ra, gõ /login rồi làm theo trang đăng nhập.' : 'Làm theo trang đăng nhập hiện ra.' });
+
 function withCtx(p) {
   const root = p.path;
   return { ...p, root, tasks: path.join(root, '.agents', 'tasks'), session: root === DEFAULT_ROOT ? DEFAULT_SESSION : `agents-${p.id}` };
@@ -565,6 +579,39 @@ on('POST', /^\/api\/resources\/unity-ignore$/, async (req, res, _m, url) => {
   send(res, 200, { ok: true });
 });
 
+// --- tài khoản
+on('GET', /^\/api\/accounts$/, (req, res) => send(res, 200, { accounts: loadAccounts().map(accountView) }));
+on('POST', /^\/api\/accounts$/, async (req, res) => {
+  const b = await readBody(req);
+  const name = String(b.name || '').trim().slice(0, 40);
+  if (!name) return send(res, 400, { error: 'Nhập tên hồ sơ' });
+  if (!['claude', 'codex'].includes(b.agent)) return send(res, 400, { error: 'Chỉ hỗ trợ Claude và Codex.' });
+  const list = loadAccounts();
+  let id = slug(name), n = 2;
+  while (list.some((x) => x.id === id)) id = `${slug(name)}-${n++}`;
+  const dir = path.join(ACCOUNTS_DIR, id);
+  fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
+  if (b.copySettings !== false) {
+    // chỉ chép cài đặt, KHÔNG chép thông tin đăng nhập
+    const src = b.agent === 'claude' ? path.join(os.homedir(), '.claude') : path.join(os.homedir(), '.codex');
+    for (const f of b.agent === 'claude' ? ['settings.json', 'CLAUDE.md'] : ['config.toml', 'AGENTS.md']) {
+      try { if (fs.existsSync(path.join(src, f)) && !fs.existsSync(path.join(dir, f))) fs.copyFileSync(path.join(src, f), path.join(dir, f)); } catch { /* bỏ qua */ }
+    }
+  }
+  const acc = { id, name, agent: b.agent, dir };
+  list.push(acc); saveAccounts(list);
+  send(res, 200, { ok: true, account: accountView(acc) });
+});
+on('DELETE', /^\/api\/accounts$/, (req, res, _m, url) => {
+  const id = url.searchParams.get('id');
+  const list = loadAccounts();
+  const a = list.find((x) => x.id === id);
+  if (!a) return send(res, 404, { error: 'Không có hồ sơ này' });
+  if (url.searchParams.get('purge')) fs.rmSync(a.dir, { recursive: true, force: true }); // xoá cả thông tin đăng nhập (chỉ trong thư mục accounts của dashboard)
+  saveAccounts(list.filter((x) => x.id !== id));
+  send(res, 200, { ok: true });
+});
+
 // --- state / tasks
 on('GET', /^\/api\/state$/, async (req, res, _m, url) => {
   const ctx = getCtx(url);
@@ -573,7 +620,7 @@ on('GET', /^\/api\/state$/, async (req, res, _m, url) => {
   send(res, 200, {
     project: { id: ctx.id, name: ctx.name, path: ctx.root, kind: ctx.kind || '', contextMode: !!ctx.contextMode }, session: ctx.session,
     ...(await sessionInfo(ctx)), chat: chat.info(ctx), requests: chat.listRequests(ctx), tasks: listTasks(ctx), workersTxt, hierarchy: readHierarchy(ctx),
-    resources: chat.resourceInfo(ctx), ...(await scaffoldState(ctx.root, ctx.kind === 'office')),
+    resources: chat.resourceInfo(ctx), accounts: loadAccounts().map(accountView), ...(await scaffoldState(ctx.root, ctx.kind === 'office')),
   });
 });
 
@@ -619,7 +666,7 @@ on('PUT', /^\/api\/task\/([^/]+)$/, async (req, res, m, url) => {
   send(res, 200, { ok: true });
 });
 
-const chat = require('./chat')({ on, send, readBody, getCtx, loadProjects, withCtx, run });
+const chat = require('./chat')({ on, send, readBody, getCtx, loadProjects, loadAccounts, withCtx, run });
 const validAgent = (a) => !!specOf(a) && { name: a.name || '', agent: a.agent, model: a.model || '', effort: a.effort || '' };
 
 const assign = async (ctx, id, w) => {
