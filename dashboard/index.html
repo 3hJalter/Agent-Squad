@@ -190,6 +190,7 @@ a.btn:hover{border-color:var(--accent)}
   <button id="btnStart" class="primary">Start agents</button>
   <button id="btnStop" class="danger">Stop</button>
   <button id="btnAgents" class="small" title="Xem và sửa cây phân cấp agent: ai là cấp trên của ai, thêm, đổi tên, đổi model, xoá agent">🌳 Agents<span id="agBadge" class="badge" hidden></span></button>
+  <button id="btnAcc" class="small" title="Hồ sơ tài khoản Claude / Codex: dùng nhiều tài khoản và chọn tài khoản cho từng agent">👤 Tài khoản</button>
   <button id="btnRes" class="small" title="Folder và file thật mà agent được đọc và sửa tại chỗ (code, tài liệu, dữ liệu)">📁 Tài nguyên<span id="resCount" class="hint"></span></button>
   <button id="btnUsage" class="small" title="Số token mỗi agent đã dùng, chia theo Claude, Codex, Gemini">📊 Token</button>
   <button id="btnNotify" class="small" title="Báo bằng tiếng và thông báo của trình duyệt khi agent xong, bị chặn hoặc cần bạn"></button>
@@ -325,6 +326,23 @@ a.btn:hover{border-color:var(--accent)}
       <div id="pjList" style="display:grid;gap:6px"></div>
       <span class="hint">"Xoá khỏi danh sách" chỉ bỏ đường dẫn khỏi dashboard, không xoá file nào trên máy.</span></div>
     <p class="hint" style="margin:0">Mỗi project có phiên agent riêng, chạy song song được. Repo để trong WSL (Home) chạy nhanh hơn ổ C:/D:.</p>
+  </div>
+</dialog>
+
+<dialog id="dlgAcc">
+  <div class="dlg-h"><h3>👤 Tài khoản</h3><button id="accClose" class="small">Đóng</button></div>
+  <div class="dlg-b">
+    <p class="hint" style="margin:0">Mỗi hồ sơ là một tài khoản Claude hoặc Codex (ChatGPT) đăng nhập riêng. Agent không chọn hồ sơ thì dùng tài khoản đang đăng nhập sẵn trong WSL. Chọn hồ sơ cho từng agent ở mục 🌳 Agents, bấm "✏️ Sửa". Các agent dùng tài khoản khác nhau chạy song song được.</p>
+    <div id="accList" style="display:grid;gap:8px"></div>
+    <div class="box"><h4>➕ Tạo hồ sơ</h4>
+      <div class="agadd">
+        <label>Tên hồ sơ<input id="acName" maxlength="40" placeholder="vd: Claude công việc" style="width:200px"></label>
+        <label>Loại<select id="acAgent"><option value="claude">Claude Code</option><option value="codex">Codex (ChatGPT)</option></select></label>
+        <label style="flex-direction:row;display:flex;gap:6px;align-items:center;color:var(--text)"><input type="checkbox" id="acCopy" checked> Chép cài đặt cơ bản (không chép đăng nhập)</label>
+        <button id="acAdd" class="primary small">Tạo</button>
+      </div>
+      <span class="hint">Tạo xong, mỗi hồ sơ cần đăng nhập một lần: dashboard hiện sẵn một dòng để dán vào Ubuntu (WSL). Hồ sơ mới là thư mục cấu hình trống nên chưa có plugin hay MCP riêng của tài khoản chính. Chỉ nên dùng tài khoản của chính bạn hoặc của đội bạn.</span>
+    </div>
   </div>
 </dialog>
 
@@ -659,7 +677,8 @@ function agRowHtml(a, all){
   const status = a.busy ? `<span class="pill busy"><span class="dot"></span>đang làm${task?' '+esc(task.id):''}</span>`
     : a.wants ? '<span class="pill wait"><span class="dot"></span>chờ bạn cho phép</span>'
     : task ? `<span class="pill">đang giữ ${esc(task.id)}</span>` : '<span class="pill"><span class="dot on"></span>rảnh</span>';
-  const info = a.agent ? esc(a.agent)+(a.model?' · '+esc(a.model):' · model mặc định')+(a.effort?' · effort '+esc(a.effort):'') : esc(workerInfo(a.name));
+  const accName = (id)=> (state?.accounts||[]).find(x=>x.id===id)?.name || id;
+  const info = a.agent ? esc(a.agent)+(a.model?' · '+esc(a.model):' · model mặc định')+(a.effort?' · effort '+esc(a.effort):'')+(a.account?' · 👤 '+esc(accName(a.account)):'') : esc(workerInfo(a.name));
   const under = below(all, a.name);
   const psel = a.name==='lead' ? '' : `<select class="agParent" title="Cấp trên trực tiếp (người giao việc cho agent này)">${all.filter(x=>x.name!==a.name && !under.has(x.name)).map(x=>`<option value="${esc(x.name)}"${x.name===a.parent?' selected':''}>dưới ${esc(agLabel(x.name))}</option>`).join('')}</select>`;
   const row = `<div class="agrow" data-name="${esc(a.name)}" draggable="${a.name!=='lead'}" style="margin-left:${a.depth*24}px">
@@ -671,8 +690,10 @@ function agRowHtml(a, all){
     ${a.name==='lead'?'':`<label>Tên<input class="aeName" maxlength="30" value="${esc(a.name)}" style="width:130px"></label>`}
     <label>Model<input class="aeModel" list="aeModels" value="${esc(a.model||'')}" placeholder="mặc định" style="width:190px"><datalist id="aeModels">${models.map(m=>`<option value="${esc(m)}">`).join('')}</datalist></label>
     <label>Effort<select class="aeEffort"${(catalog[a.agent]?.efforts||[]).length?'':' disabled'}>${effOpts(a.agent, a.effort)}</select></label>
+    ${['claude','codex'].includes(a.agent)?`<label>Tài khoản<select class="aeAcc"><option value="">mặc định (đang đăng nhập sẵn)</option>${(state?.accounts||[]).filter(x=>x.agent===a.agent).map(x=>`<option value="${esc(x.id)}"${x.id===a.account?' selected':''}>${esc(x.name)}${x.loggedIn?'':' (chưa đăng nhập)'}</option>`).join('')}</select></label>`:''}
     <button class="small primary aeSave">Lưu</button><button class="small aeCancel">Huỷ</button>
-    <span class="hint" style="flex-basis:100%">Đổi model hoặc tên thì agent bắt đầu cuộc trò chuyện mới. Muốn đổi sang hãng khác (Claude, Codex, Gemini) thì xoá rồi thêm agent mới.</span></div>`;
+    <label style="flex-basis:100%;flex-direction:row;display:flex;gap:6px;align-items:center;color:var(--text)"><input type="checkbox" class="aeKeep" checked> Lưu bộ nhớ trước khi đổi tài khoản hoặc model (khuyên dùng: agent ghi lại việc đang làm, sau khi đổi sẽ đọc lại)</label>
+    <span class="row" style="flex-basis:100%"><button class="small aeMem" title="Bảo agent ghi bộ nhớ ra .agents/handoff/${esc(a.name)}.md, không đổi gì">💾 Cập nhật bộ nhớ ngay</button><span class="hint">Đổi tài khoản hoặc model thì agent bắt đầu cuộc trò chuyện mới. Muốn đổi sang hãng khác (Claude, Codex, Gemini) thì xoá rồi thêm agent mới.</span></span></div>`;
 }
 function renderAgents(){
   if(!state) return;
@@ -706,15 +727,22 @@ $('#agTree').addEventListener('click',async e=>{
   const row = e.target.closest('[data-name]'); if(!row) return; const name = row.dataset.name;
   if(e.target.closest('.agEdit')){ agEditing = agEditing===name ? '' : name; renderAgents(); return }
   if(e.target.closest('.aeCancel')){ agEditing=''; renderAgents(); return }
+  if(e.target.closest('.aeMem')){
+    try{ const r = await api('POST','/api/agents/'+encodeURIComponent(name)+'/memory'); toast(`Đã bảo ${agLabel(name)} lưu bộ nhớ vào ${r.file}`,'ok') }catch(x){ toast(x.message,'err') }
+    return;
+  }
   if(e.target.closest('.aeSave')){
     const nw = row.querySelector('.aeName') ? slugName(row.querySelector('.aeName').value) : name;
     if(!nw){ toast('Nhập tên agent','err'); return }
     const model = row.querySelector('.aeModel').value.trim(), effort = row.querySelector('.aeEffort').value;
     try{
-      await api('POST','/api/agents/'+encodeURIComponent(name),{model, effort, ...(nw!==name?{rename:nw}:{})});
+      let cur = name;
+      if(nw!==name){ await api('POST','/api/agents/'+encodeURIComponent(name),{rename:nw}); cur = nw; if(win===name){ win=nw; localSet('win.'+proj,win); chatSig='' } }
+      const accSel = row.querySelector('.aeAcc');
+      const r = await api('POST','/api/agents/'+encodeURIComponent(cur),{model, effort, ...(accSel?{account:accSel.value}:{}), keepMemory: row.querySelector('.aeKeep').checked});
       syncCfg(c=>{ if(name==='lead'){ c.lead.model=model; c.lead.effort=effort } else { const w=c.workers.find(x=>x.name===name); if(w){ w.name=nw; w.model=model; w.effort=effort } } });
-      if(win===name && nw!==name){ win=nw; localSet('win.'+proj,win); chatSig='' }
-      agEditing=''; toast('Đã lưu','ok');
+      agEditing='';
+      toast(r.pending ? `${agLabel(cur)} đang lưu bộ nhớ. Thay đổi sẽ tự áp dụng khi agent lưu xong (xem trong chat của agent).` : 'Đã lưu','ok');
     }catch(x){ toast(x.message,'err') }
     await refreshState(); renderAgents(); return;
   }
@@ -760,7 +788,7 @@ async function renderUsage(){
     <div class="utot">${prov.map(p=>`<div class="ucard"><span class="hint">${esc(catalog[p.a]?.label||p.a)}</span><span class="big" title="${p.total} token">${fmtTok(p.total)} <span class="hint" style="font-weight:400">${pct(p.total,total)}</span></span>
       <div class="bar ${p.a}"><i style="width:${total?p.total/total*100:0}%"></i></div><span class="hint">${p.turns} lượt${p.cost?' · $'+p.cost.toFixed(2):''}</span></div>`).join('')}</div>
     <div class="utable"><span class="h">Agent</span><span class="h">Hãng · model</span><span class="h r">Lượt</span><span class="h r">Vào</span><span class="h r">Ra</span><span class="h r">Tổng</span><span class="h r" title="Trung bình token mỗi lượt (vào + ra)">TB/lượt</span><span class="h">% tổng</span>
-      ${rows.map(r=>`<b>${esc(agLabel(r.name))}</b><span class="hint">${esc(r.agent)}${r.model?' · '+esc(r.model):' · mặc định'}${r.cm?' · <b title="Lượt chạy có context-mode">⚡ context-mode</b>':''}</span><span class="r">${r.turns}</span><span class="r" title="${r.in} token, trong đó ${r.cached||0} lấy từ bộ nhớ đệm">${fmtTok(r.in)}</span><span class="r" title="${r.out} token">${fmtTok(r.out)}</span><span class="r" title="${r.total} token"><b>${fmtTok(r.total)}</b></span><span class="r" title="${r.turns?Math.round(r.total/r.turns):0} token mỗi lượt">${r.turns?fmtTok(r.total/r.turns):'-'}</span>
+      ${rows.map(r=>`<b>${esc(agLabel(r.name))}</b><span class="hint">${esc(r.agent)}${r.model?' · '+esc(r.model):' · mặc định'}${r.cm?' · <b title="Lượt chạy có context-mode">⚡ context-mode</b>':''}${r.account?' · 👤 '+esc(r.accountName):''}</span><span class="r">${r.turns}</span><span class="r" title="${r.in} token, trong đó ${r.cached||0} lấy từ bộ nhớ đệm">${fmtTok(r.in)}</span><span class="r" title="${r.out} token">${fmtTok(r.out)}</span><span class="r" title="${r.total} token"><b>${fmtTok(r.total)}</b></span><span class="r" title="${r.turns?Math.round(r.total/r.turns):0} token mỗi lượt">${r.turns?fmtTok(r.total/r.turns):'-'}</span>
         <span class="row" style="gap:6px;flex-wrap:nowrap"><span class="bar ${esc(r.agent)}" style="flex:1"><i style="width:${r.total/total*100}%"></i></span><span style="width:42px;text-align:right">${pct(r.total,total)}</span></span>`).join('')}</div></div>`;
 }
 $('#btnUsage').onclick = ()=>{ $('#uBody').innerHTML=''; $('#dlgUsage').showModal(); renderUsage() };
@@ -930,7 +958,7 @@ async function refreshState(){
     $('#sdot').classList.toggle('on', isRunning());
     $('#stext').textContent = chatOn() ? `đang chạy (chat) · ${state.chat.agents.length} agent` : state.running ? `đang chạy (terminal) · ${state.windows.length} window` : `chưa chạy`;
     $('#stext').parentElement.title = state.project.path + ' · phiên tmux ' + state.session;
-    renderBoard(); renderTabs(); notifyChanges(); notifyAgents(); renderBanner(); renderReqs(); renderRes();
+    renderBoard(); renderTabs(); notifyChanges(); notifyAgents(); renderBanner(); renderReqs(); renderRes(); renderAcc();
     if($('#dlgAgents').open && !agEditing && !agDrag && !document.activeElement?.closest?.('#agTree')) renderAgents();
     $('#btnCleanup').hidden = !state.tasks.some(t=>t.status==='done'); $('#btnClearChat').hidden = !isRunning();
   }catch(e){$('#stext').textContent='mất kết nối tới server'; $('#sdot').classList.remove('on')}
@@ -1247,6 +1275,40 @@ $('#dnCreate').onclick = async()=>{
     $('#dlgNew').close(); refreshState();
   }catch(e){toast(e.message,'err')}
 };
+
+// ---------------------------------------------------------------- tài khoản
+function renderAcc(){
+  if(!$('#dlgAcc').open) return;
+  const list = state?.accounts || [], users = state?.chat?.agents || [];
+  $('#accList').innerHTML = list.length ? list.map(a=>{
+    const used = users.filter(u=>u.account===a.id).map(u=>agLabel(u.name));
+    const cmd = `<div class="row"><code style="flex:1;min-width:200px;word-break:break-all">${esc(a.loginCmd)}</code><button class="small accCopy" data-cmd="${esc(a.loginCmd)}">Sao chép</button></div><div class="hint">Mở Ubuntu (WSL), dán dòng trên rồi Enter. ${esc(a.loginHint)}</div>`;
+    return `<div class="box" data-id="${esc(a.id)}"><div class="row"><b>${esc(a.name)}</b><span class="pill">${a.agent==='claude'?'Claude Code':'Codex'}</span>
+      ${a.loggedIn?'<span class="pill"><span class="dot on"></span>đã đăng nhập</span>':'<span class="pill wait"><span class="dot"></span>chưa đăng nhập</span>'}<span class="spacer"></span><button class="small danger accDel">Xoá</button></div>
+      ${a.loggedIn?`<details><summary>Đăng nhập lại hoặc đổi sang tài khoản khác</summary>${cmd}</details>`:cmd}
+      <div class="hint">Đang dùng bởi: ${used.length?esc(used.join(', ')):'chưa agent nào (chọn ở 🌳 Agents)'}</div></div>`;
+  }).join('') : '<span class="hint">Chưa có hồ sơ nào. Tạo ở ô bên dưới.</span>';
+}
+$('#btnAcc').onclick = ()=>{ if(!$('#dlgAcc').open) $('#dlgAcc').showModal(); renderAcc() };
+$('#accClose').onclick = ()=>$('#dlgAcc').close();
+$('#acAdd').onclick = async()=>{
+  const name = $('#acName').value.trim(); if(!name){ toast('Nhập tên hồ sơ','err'); $('#acName').focus(); return }
+  $('#acAdd').disabled = true;
+  try{ await api('POST','/api/accounts',{name, agent:$('#acAgent').value, copySettings:$('#acCopy').checked}); $('#acName').value=''; toast('Đã tạo hồ sơ. Bước tiếp: đăng nhập một lần bằng dòng lệnh hiện ở hồ sơ.','ok'); await refreshState(); renderAcc() }
+  catch(e){ toast(e.message,'err') }
+  $('#acAdd').disabled = false;
+};
+$('#accList').addEventListener('click',async e=>{
+  const box = e.target.closest('[data-id]'); if(!box) return; const id = box.dataset.id;
+  const cp = e.target.closest('.accCopy');
+  if(cp){ try{ await navigator.clipboard.writeText(cp.dataset.cmd); toast('Đã sao chép','ok') }catch{ toast('Không sao chép được, hãy bôi đen dòng lệnh rồi Ctrl+C.','err') } return }
+  if(e.target.closest('.accDel')){
+    const a = (state?.accounts||[]).find(x=>x.id===id);
+    if(!confirm(`Xoá hồ sơ "${a?.name||id}"? Agent đang dùng hồ sơ này sẽ quay về tài khoản mặc định ở lượt sau.`)) return;
+    const purge = confirm('Xoá luôn thông tin đăng nhập của hồ sơ này trên máy?\nOK = xoá hẳn, Huỷ = giữ lại thư mục (chỉ bỏ khỏi danh sách).');
+    try{ await api('DELETE','/api/accounts?id='+encodeURIComponent(id)+(purge?'&purge=1':'')); toast('Đã xoá hồ sơ','ok'); await refreshState(); renderAcc() }catch(x){ toast(x.message,'err') }
+  }
+});
 
 // ---------------------------------------------------------------- tài nguyên
 const resIcon = (r)=> !r.exists ? '⚠️' : r.unity ? '🎮' : r.isDir ? '📁' : '📄';

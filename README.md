@@ -49,6 +49,12 @@ Nâng cấp chính Agent-Squad bằng agent: chọn project Agent-Squad trên da
   - **🌳 Agents**: xem cây phân cấp, kéo thả để đổi cấp trên (ghi vào `.agents/hierarchy.txt`); ở kiểu Chat còn thêm,
     đổi tên, đổi model/effort và xoá agent (cấp dưới chuyển lên cấp trên, task đang giữ về Todo, worktree được giữ lại).
   - **📊 Token**: số token mỗi agent đã dùng và tỉ lệ % theo Claude / Codex / Gemini (kiểu Chat, lưu ở `.agents/chat/usage.json`).
+  - **👤 Tài khoản**: hồ sơ đăng nhập riêng cho Claude và Codex (ChatGPT), lưu ở `~/.agent-squad/accounts/<hồ sơ>/` (Claude dùng `CLAUDE_CONFIG_DIR`,
+    Codex dùng `CODEX_HOME`). Mỗi hồ sơ đăng nhập một lần bằng dòng lệnh dashboard hiện sẵn; chọn hồ sơ cho từng agent ở 🌳 Agents > Sửa,
+    các agent dùng tài khoản khác nhau chạy song song được. Khi hồ sơ tạo mới chỉ chép cài đặt cơ bản, không chép đăng nhập.
+    Đổi tài khoản hoặc model thì agent bắt đầu cuộc trò chuyện mới; mặc định agent **ghi bộ nhớ ra `.agents/handoff/<tên>.md` trước khi đổi** và đọc lại sau đó
+    (nếu agent không ghi được, ví dụ hết hạn mức, dashboard lấy phần cuối lịch sử chat thay thế). Nút "💾 Cập nhật bộ nhớ ngay" ghi bộ nhớ bất cứ lúc nào.
+    Bảng Token hiện theo tài khoản. Gemini chưa hỗ trợ.
   - **⚡ context-mode** (thử nghiệm, "Chọn agent & model", tắt mặc định, theo project): agent Claude nạp MCP server
     [mksglu/context-mode](https://github.com/mksglu/context-mode) (`npx -y context-mode`, cần Node.js 22.5+) để dữ liệu lớn (log dài, nhiều file) không đổ hết vào ngữ cảnh.
     Chỉ cho Claude, đổi xong áp dụng từ lượt sau. Rủi ro: nó cho agent chạy code trong ô riêng, nằm ngoài danh sách lệnh an toàn và nút "Cho phép"

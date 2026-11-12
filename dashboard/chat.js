@@ -83,6 +83,12 @@ const CM_MCP = JSON.stringify({ mcpServers: { [CM_SERVER]: { command: 'npx', arg
 const CM_NOTE = ' CONTEXT-MODE: to keep your context small, when a command or file read would print a lot (many files, long logs, big JSON), do not dump it: ' +
   'use the MCP tools ctx_execute / ctx_execute_file / ctx_batch_execute (run a small script and print only the result) and ctx_search / ctx_index to look things up later. ' +
   'For small reads and for editing files use your normal tools.';
+// Đổi tài khoản / model: agent ghi bộ nhớ ra file trước, rồi cuộc trò chuyện mới đọc lại file đó.
+const MEMORY_SAVE = (file) => `Save your working memory so a fresh conversation can continue your work. Write the file ${file} (overwrite it) with at most 40 short lines in the human's language, with these sections: ` +
+  '"## Đang làm" (current task and its status), "## Đã chốt" (decisions and conventions agreed with the human), "## File đã đụng tới" (paths), "## Bước tiếp theo", "## Lưu ý" (pitfalls and preferences the human stated). ' +
+  'Facts only: if unsure write "chưa rõ". Do no other work. Then reply with exactly one line: "Đã lưu bộ nhớ."';
+const READ_MEMORY = (file) => `NOTE: your account or model was just changed, so this is a fresh conversation. Before anything else, read your memory notes in ${file} (you wrote them before the change) ` +
+  'and treat them as what you already know about this project. If a note looks outdated, check the code or the task file. Do not reply about this note separately. Now continue with the request below.\n\n';
 const RES_REMOVED = ' RESOURCES: the list of resource folders is now empty. Do not touch folders you were given before.';
 const GRANT_RE = /^(network|[A-Za-z_][A-Za-z0-9_]{0,40}(\([^\n]{1,300}\))?)$/;
 const workerRole = (name, agentsDir) => `You are a WORKER named "${name}" (chat mode, no tmux), not the lead: ignore the LEAD rules in CLAUDE.md ` +
@@ -96,7 +102,7 @@ const noLink = (a) => a?.agent === 'codex';
 // merge nhánh chính vào worktree trước khi giao việc, và commit thay đổi sau mỗi lượt.
 const gitByDashboard = (ctx, name, a) => ctx.kind !== 'office' && name !== 'lead' && a?.agent === 'codex';
 
-module.exports = function setupChat({ on, send, readBody, getCtx, loadProjects, withCtx, run }) {
+module.exports = function setupChat({ on, send, readBody, getCtx, loadProjects, loadAccounts, withCtx, run }) {
   const live = new Map(); // key root|name -> { child, msg, queue: [] }
   const cache = new Map(); // key root|name -> messages[]
 
@@ -132,6 +138,58 @@ module.exports = function setupChat({ on, send, readBody, getCtx, loadProjects, 
     fs.writeFileSync(path.join(dir(ctx), name + '.jsonl'), messages(ctx, name).map((m) => JSON.stringify(m) + '\n').join(''));
   }
   const newMsg = (role, text, extra = {}) => ({ id: crypto.randomUUID(), role, text, ts: Date.now(), ...extra });
+
+  // ------------------------------------------------------------ tài khoản (hồ sơ đăng nhập riêng cho từng agent) và bộ nhớ khi đổi
+  // Claude đọc cấu hình/đăng nhập từ CLAUDE_CONFIG_DIR, Codex từ CODEX_HOME: mỗi hồ sơ là một thư mục riêng.
+  function accountOf(a) {
+    if (!a?.account || !['claude', 'codex'].includes(a.agent)) return null;
+    return (loadAccounts() || []).find((x) => x.id === a.account && x.agent === a.agent) || null;
+  }
+  function accountEnv(a) {
+    const acc = accountOf(a);
+    if (!acc) return {};
+    return a.agent === 'claude' ? { CLAUDE_CONFIG_DIR: acc.dir } : { CODEX_HOME: acc.dir };
+  }
+  const handoffFile = (ctx, name) => path.join(ctx.root, '.agents', 'handoff', name + '.md');
+  // dự phòng khi agent không ghi được bộ nhớ (ví dụ tài khoản cũ hết hạn mức): lấy phần cuối lịch sử chat đã lưu
+  function writeFallbackHandoff(ctx, name) {
+    const lines = messages(ctx, name).filter((m) => (m.role === 'you' || m.role === 'agent') && m.text).slice(-14)
+      .map((m) => `- ${m.role === 'you' ? 'Bạn' : 'Agent'}: ${String(m.text).replace(/\s+/g, ' ').slice(0, 500)}`);
+    fs.mkdirSync(path.dirname(handoffFile(ctx, name)), { recursive: true });
+    fs.writeFileSync(handoffFile(ctx, name), `# Bộ nhớ của ${name} (tự lấy từ lịch sử chat, có thể thiếu hoặc không còn đúng)\n\n` + (lines.join('\n') || '(chưa có lịch sử)') + '\n');
+  }
+  // áp dụng đổi model / effort / tài khoản; model hoặc tài khoản đổi thì bắt đầu cuộc trò chuyện mới và nhớ để agent đọc lại bộ nhớ
+  function planChange(st, name, ch) {
+    const a = st.agents[name];
+    const model = typeof ch.model === 'string' ? ch.model.trim() : (a.model || '');
+    const effort = typeof ch.effort === 'string' ? ch.effort : (a.effort || '');
+    const account = typeof ch.account === 'string' ? ch.account : (a.account || '');
+    if (!MODEL_RE.test(model) || !EFFORT_RE.test(effort)) throw new Error('Model hoặc effort không hợp lệ');
+    if (account) {
+      if (!['claude', 'codex'].includes(a.agent)) throw new Error('Gemini chưa hỗ trợ đổi tài khoản trong dashboard.');
+      const acc = (loadAccounts() || []).find((x) => x.id === account);
+      if (!acc || acc.agent !== a.agent) throw new Error('Hồ sơ tài khoản này không dùng cho ' + a.agent + '.');
+    }
+    const fresh = model !== (a.model || '') || account !== (a.account || '');
+    return { model, effort, account, fresh, changed: fresh || effort !== (a.effort || '') };
+  }
+  function applyChange(ctx, st, name, ch) {
+    const a = st.agents[name];
+    const { model, effort, account, fresh, changed } = planChange(st, name, ch);
+    if (!changed) return false;
+    a.model = model; a.effort = effort;
+    if (account) a.account = account; else delete a.account;
+    if (fresh) {
+      if (st.sessions) delete st.sessions[name];
+      st.handoffRead = st.handoffRead || {};
+      if (fs.existsSync(handoffFile(ctx, name))) st.handoffRead[name] = true;
+    }
+    const accName = accountOf(a)?.name;
+    addMessage(ctx, name, newMsg('system', `Đã đổi cấu hình: ${a.agent}${model ? ', model ' + model : ', model mặc định'}${effort ? ', effort ' + effort : ''}${a.account ? ', tài khoản ' + (accName || a.account) : ', tài khoản mặc định'}.` +
+      (fresh ? ' Agent bắt đầu cuộc trò chuyện mới' + (st.handoffRead?.[name] ? ' và sẽ đọc lại bộ nhớ đã lưu trước.' : '.') : ' Áp dụng từ lượt tiếp theo.')));
+    saveState(ctx, st); writeWorkers(ctx, st);
+    return true;
+  }
 
   // ------------------------------------------------------------ tài nguyên của project (folder/file dùng chung, sửa tại chỗ)
   function resourceInfo(ctx) {
@@ -372,6 +430,11 @@ module.exports = function setupChat({ on, send, readBody, getCtx, loadProjects, 
       text = 'UPDATE:' + note + '\n\n' + text;
     }
     if (prev !== sig) { st.resSig = st.resSig || {}; st.resSig[name] = sig; saveState(ctx, st); }
+    // cuộc trò chuyện mới sau khi đổi tài khoản/model: đọc lại bộ nhớ đã lưu trước khi làm
+    if ((st.handoffRead || {})[name] && !st.sessions[name] && !job.memorySave) {
+      text = READ_MEMORY(handoffFile(ctx, name)) + text;
+      delete st.handoffRead[name]; saveState(ctx, st);
+    }
     const { cmd, args, stdin } = buildCmd(ctx, name, a, st.sessions[name], text, (st.grants || {})[name] || []);
     const msg = newMsg('agent', '', { steps: [], running: true, agent: a.agent, ...(useCm(ctx, a) ? { cm: true } : {}) });
     L.msg = msg;
@@ -379,7 +442,7 @@ module.exports = function setupChat({ on, send, readBody, getCtx, loadProjects, 
     let child;
     try {
       // detached: agent và mọi lệnh con của nó cùng một nhóm tiến trình, để nút Dừng tắt được hết
-      child = spawn(cmd, args, { cwd: a.cwd, env: process.env, detached: true, stdio: [stdin ? 'pipe' : 'ignore', 'pipe', 'pipe'] });
+      child = spawn(cmd, args, { cwd: a.cwd, env: { ...process.env, ...accountEnv(a) }, detached: true, stdio: [stdin ? 'pipe' : 'ignore', 'pipe', 'pipe'] });
     } catch (e) { msg.error = e.message; return finish(); }
     L.child = child;
     if (stdin) { child.stdin.on('error', () => {}); child.stdin.end(stdin); }
@@ -407,8 +470,21 @@ module.exports = function setupChat({ on, send, readBody, getCtx, loadProjects, 
       delete msg.running; L.child = null; L.msg = null; L.stopped = false;
       if (!msg.text && !msg.error && !msg.steps.length) msg.text = '(không có trả lời)';
       try { const fl = filesOf(ctx, a, msg); if (fl.length) msg.files = fl; } catch { /* không bắt buộc */ }
+      let after = null; // việc làm sau khi tin nhắn của lượt này đã được ghi vào chat
+      if (job.memorySave) {
+        // lượt "lưu bộ nhớ": nếu agent không ghi được file thì lấy từ lịch sử chat; xong thì áp dụng thay đổi đang chờ
+        const f = handoffFile(ctx, name);
+        let saved = false;
+        try { saved = !msg.error && fs.statSync(f).mtimeMs >= job.startedAt; } catch { /* chưa có */ }
+        if (!saved) { try { writeFallbackHandoff(ctx, name); msg.note = 'Agent không ghi được bộ nhớ, dashboard đã lấy từ lịch sử chat thay thế.'; } catch { /* bỏ qua */ } }
+        if (job.switchTo) after = () => {
+          try { const st2 = loadState(ctx); if (st2.agents[name]) applyChange(ctx, st2, name, job.switchTo); }
+          catch (e) { addMessage(ctx, name, newMsg('system', 'Không đổi được: ' + e.message)); }
+        };
+      }
       if (msg.usage) { try { addUsage(ctx, name, a, msg.usage, !!msg.cm); } catch (e) { console.error('usage:', e.message); } }
       addMessage(ctx, name, msg);
+      if (after) after();
       if (gitByDashboard(ctx, name, a)) {
         L.committing = true;
         try {
@@ -482,9 +558,10 @@ module.exports = function setupChat({ on, send, readBody, getCtx, loadProjects, 
     return { days: {} };
   }
   function addUsage(ctx, name, a, u, cm) {
+    const accId = accountOf(a) ? a.account : '';
     const all = loadUsage(ctx);
     const day = all.days[dayKey()] || (all.days[dayKey()] = {});
-    const k = `${name}|${a.agent}|${a.model || ''}` + (cm ? '|cm' : '');
+    const k = `${name}|${a.agent}|${a.model || ''}` + (cm ? '|cm' : '') + (accId ? '|acc:' + accId : '');
     const r = day[k] || (day[k] = { in: 0, out: 0, cached: 0, cost: 0, turns: 0 });
     r.in += u.in; r.out += u.out; r.cached += u.cached || 0; r.cost += u.cost || 0; r.turns += 1;
     fs.mkdirSync(dir(ctx), { recursive: true });
@@ -495,11 +572,13 @@ module.exports = function setupChat({ on, send, readBody, getCtx, loadProjects, 
     const days = Object.keys(all.days).sort();
     const from = range === 'today' ? dayKey() : range === '7' ? dayKey(new Date(Date.now() - 6 * 864e5)) : '';
     const rows = new Map();
+    const accs = loadAccounts() || [];
     for (const d of days) {
       if (d < from) continue;
       for (const [k, v] of Object.entries(all.days[d])) {
-        const [name, agent, model, cmFlag] = k.split('|');
-        const r = rows.get(k) || { name, agent, model, cm: cmFlag === 'cm', in: 0, out: 0, cached: 0, cost: 0, turns: 0 };
+        const [name, agent, model, ...flags] = k.split('|');
+        const accId = (flags.find((x) => x.startsWith('acc:')) || '').slice(4);
+        const r = rows.get(k) || { name, agent, model, cm: flags.includes('cm'), account: accId, accountName: (accs.find((x) => x.id === accId) || {}).name || accId, in: 0, out: 0, cached: 0, cost: 0, turns: 0 };
         r.in += v.in || 0; r.out += v.out || 0; r.cached += v.cached || 0; r.cost += v.cost || 0; r.turns += v.turns || 0;
         rows.set(k, r);
       }
@@ -717,15 +796,18 @@ module.exports = function setupChat({ on, send, readBody, getCtx, loadProjects, 
       const a = st.agents?.[name];
       const wantsEdit = typeof b.model === 'string' || typeof b.effort === 'string' || (typeof b.rename === 'string' && b.rename && b.rename !== name);
       if (wantsEdit && !a) throw new Error('Chỉ sửa được agent khi đang chạy kiểu Chat.');
-      if (a && (typeof b.model === 'string' || typeof b.effort === 'string')) {
-        const model = typeof b.model === 'string' ? b.model.trim() : a.model, effort = typeof b.effort === 'string' ? b.effort : a.effort;
-        if (!MODEL_RE.test(model) || !EFFORT_RE.test(effort)) throw new Error('Model hoặc effort không hợp lệ');
-        if (model !== (a.model || '') && st.sessions) delete st.sessions[name]; // đổi model: bắt đầu cuộc trò chuyện mới
-        if (model !== (a.model || '') || effort !== (a.effort || '')) {
-          a.model = model; a.effort = effort;
-          addMessage(ctx, name, newMsg('system', `Bạn đã đổi cấu hình: ${a.agent}${model ? ', model ' + model : ', model mặc định'}${effort ? ', effort ' + effort : ''}. Áp dụng từ lượt tiếp theo.`));
+      const wantsChange = a && (typeof b.model === 'string' || typeof b.effort === 'string' || typeof b.account === 'string');
+      if (wantsChange) {
+        const ch = { model: b.model, effort: b.effort, account: b.account };
+        const fresh = (typeof b.model === 'string' && b.model.trim() !== (a.model || '')) || (typeof b.account === 'string' && b.account !== (a.account || ''));
+        if (fresh && b.keepMemory !== false && st.sessions?.[name]) {
+          // trước khi đổi: agent ghi bộ nhớ ra file (bằng tài khoản/model cũ), xong dashboard mới áp dụng thay đổi
+          if (isBusy(ctx, name)) throw new Error('Agent đang làm việc. Dừng lượt hiện tại hoặc đợi xong rồi đổi.');
+          planChange(st, name, ch); // kiểm tra hợp lệ trước khi mất công lưu bộ nhớ
+          enqueue(ctx, name, MEMORY_SAVE(handoffFile(ctx, name)), { role: 'system', text: '💾 Đang lưu bộ nhớ trước khi đổi…' }, { memorySave: true, switchTo: ch, startedAt: Date.now() });
+          return send(res, 200, { ok: true, name, pending: true });
         }
-        saveState(ctx, st); writeWorkers(ctx, st);
+        applyChange(ctx, st, name, ch);
       }
       if (a && typeof b.rename === 'string' && b.rename && b.rename !== name) {
         if (name === 'lead') throw new Error('Không đổi tên được Lead.');
@@ -736,6 +818,16 @@ module.exports = function setupChat({ on, send, readBody, getCtx, loadProjects, 
       }
     } catch (e) { return send(res, 400, { error: e.message }); }
     send(res, 200, { ok: true, name });
+  });
+
+  // Nút "Cập nhật bộ nhớ": bảo agent ghi lại bộ nhớ ra .agents/handoff/<tên>.md (không đổi gì)
+  on('POST', /^\/api\/agents\/([^/]+)\/memory$/, (req, res, m, url) => {
+    const [name] = m; const ctx = getCtx(url);
+    const st = loadState(ctx);
+    if (!st.agents?.[name]) return send(res, 404, { error: 'Không có agent này (chỉ dùng được khi đang chạy kiểu Chat).' });
+    if (isBusy(ctx, name)) return send(res, 409, { error: 'Agent đang làm việc. Đợi xong rồi bấm lại.' });
+    enqueue(ctx, name, MEMORY_SAVE(handoffFile(ctx, name)), { role: 'system', text: '💾 Đang cập nhật bộ nhớ…' }, { memorySave: true, startedAt: Date.now() });
+    send(res, 200, { ok: true, file: handoffFile(ctx, name) });
   });
 
   // Xoá agent: cấp dưới chuyển lên cấp trên của nó, task đang giữ trở về "todo". Worktree và nhánh agent/<tên> được giữ lại.
@@ -798,6 +890,8 @@ module.exports = function setupChat({ on, send, readBody, getCtx, loadProjects, 
         lines.push(await addWorker(ctx, st, n, o, gitDir)); again = true;
       }
     }
+    // hồ sơ tài khoản đã gán cho agent thì giữ lại (nếu vẫn cùng loại agent)
+    for (const [n, a] of Object.entries(st.agents)) if (old[n]?.account && old[n].agent === a.agent && !a.account) a.account = old[n].account;
     // đổi agent/model thì bắt đầu cuộc trò chuyện mới cho agent đó
     for (const n of Object.keys(st.sessions || {})) {
       const o = old[n], a = st.agents[n];
@@ -829,7 +923,7 @@ module.exports = function setupChat({ on, send, readBody, getCtx, loadProjects, 
         const lastMsg = messages(ctx, name).slice(-1)[0];
         // agent đang chờ bạn bấm "Cho phép"
         const wants = !L?.child && !!lastMsg?.grants?.length && !lastMsg.granted && !lastMsg.grants.every((g) => grants.includes(g.id));
-        return { name, agent: a.agent, model: a.model || '', effort: a.effort || '', helper: !!a.helper, busy: !!L?.child, queued: L?.queue.length || 0, grants, wants };
+        return { name, agent: a.agent, model: a.model || '', effort: a.effort || '', helper: !!a.helper, account: a.account || '', busy: !!L?.child, queued: L?.queue.length || 0, grants, wants };
       }),
     };
   }
