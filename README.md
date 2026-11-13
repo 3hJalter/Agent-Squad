@@ -33,6 +33,8 @@ Nâng cấp chính Agent-Squad bằng agent: chọn project Agent-Squad trên da
     và báo lead khi task xong. Quyền ban đầu an toàn: sửa file trong project, chạy lệnh git và lệnh kiểm tra, Codex
     không có mạng. Khi agent bị chặn, tin nhắn có nút "Cho phép & làm tiếp" (cấp đúng lệnh/công cụ đó, hoặc quyền mạng
     cho Codex); thu hồi ở mục "Nâng cao". Lịch sử ở `.agents/chat/`. Không cần tmux.
+    Thẻ xin quyền chỉ ghi tên quyền dễ hiểu ("chạy Python", "công cụ .NET"), câu lệnh nằm trong "Chi tiết". Nếu máy chưa đặt tên/email git,
+    dashboard đặt sẵn theo tên agent để agent không cần `git -c user.name=…` (dạng lệnh đó không khớp quyền "git commit").
     Agent được dặn chỉ báo ngắn gọn khi xong / bị chặn / cần hỏi; lời nói giữa chừng nằm trong mục "bước đã làm".
     Agent có thể xin tạo agent cấp dưới (file `.agents/requests/<tên>.md`); dashboard hiện thẻ để bạn "Cho phép tạo" hoặc "Từ chối",
     agent mới được ghi vào `.agents/hierarchy.txt` dưới quyền agent đã xin.

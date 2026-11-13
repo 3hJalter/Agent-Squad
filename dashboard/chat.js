@@ -13,7 +13,7 @@
 'use strict';
 const fs = require('fs');
 const path = require('path');
-const { spawn } = require('child_process');
+const { spawn, spawnSync } = require('child_process');
 const crypto = require('crypto');
 
 const NAME_RE = /^[A-Za-z0-9_-]{1,40}$/;
@@ -36,18 +36,45 @@ const GEMINI_TOOLS = SAFE_CMDS.map((c) => `run_shell_command(${c})`);
 // Khi bạn bấm "Cho phép", quyền được cấp theo loại lệnh ("npm install …") chứ không chỉ đúng một câu lệnh,
 // để lần sau agent chạy lệnh cùng loại không bị chặn lại.
 const TWO_WORD = new Set(['git', 'npm', 'npx', 'yarn', 'pnpm', 'pip', 'pip3', 'cargo', 'go', 'docker', 'gh']);
+const SH_WORDS = new Set(['if', 'then', 'else', 'elif', 'fi', 'for', 'while', 'until', 'do', 'done', 'time', '!', '{', '}', '(', ')']);
+// Bỏ phần không phải lệnh: nội dung heredoc (<<'EOF' … EOF) và chuỗi trong nháy, để không hiểu nhầm nội dung file thành lệnh.
+function bareShell(cmd) {
+  return String(cmd || '')
+    .replace(/<<-?\s*(['"]?)([A-Za-z_]\w*)\1([^\n]*)\n(?:(?:[\s\S]*?\n)??[ \t]*\2[ \t]*(?=\n|$)|[\s\S]*$)/g, ' $3')
+    .replace(/'[^']*'|"(?:\\.|[^"\\])*"/g, '\u0001');
+}
 function prefixesOf(cmd) {
   const out = [];
-  for (const part of String(cmd || '').split(/&&|\|\||;|\||\n/)) {
+  for (const part of bareShell(cmd).split(/&&|\|\||;|\||\n/)) {
     const w = part.trim().split(/\s+/).filter(Boolean);
-    // "git -C <dir> …" / "git -c k=v …" -> coi như "git …" để quyền và kiểm tra khớp theo lệnh con
-    if (w[0] === 'git') while (w[1] === '-C' || w[1] === '-c') w.splice(1, 2);
+    if (/^(for|case|select|function)$/.test(w[0] || '')) continue; // "for f in a b": không phải lệnh
+    while (w.length && (SH_WORDS.has(w[0]) || /^[A-Za-z_]\w*=/.test(w[0]))) w.shift(); // từ khoá shell, "BIEN=giatri lệnh"
     if (!w.length || !/^[A-Za-z0-9._/-]+$/.test(w[0])) continue;
+    // "git -c k=v commit" / "git -C <dir> commit" không khớp quyền "git commit" của Claude: xin đúng dạng lệnh đó
+    if (w[0] === 'git' && (w[1] === '-C' || w[1] === '-c')) {
+      let i = 1;
+      while (w[i] === '-C' || w[i] === '-c') i += 2;
+      const lit = w.slice(0, i + 1);
+      if (w[i] && /^[a-z][a-z0-9-]*$/.test(w[i]) && lit.every((x) => /^[\w.@=:/+-]+$/.test(x)) && !out.includes(lit.join(' '))) out.push(lit.join(' '));
+      continue;
+    }
     const pre = TWO_WORD.has(w[0]) && /^[a-z][a-z0-9-]*$/.test(w[1] || '') ? `${w[0]} ${w[1]}` : w[0];
     if (!SAFE_CMDS.includes(pre) && !SAFE_CMDS.includes(w[0]) && !out.includes(pre)) out.push(pre);
   }
   return out;
 }
+// Tên dễ hiểu cho quyền hiện trên thẻ xin quyền (câu lệnh đầy đủ nằm trong phần chi tiết).
+const CMD_NAMES = { python: 'chạy Python', python3: 'chạy Python', pip: 'cài thư viện Python', pip3: 'cài thư viện Python', dotnet: 'công cụ .NET', which: 'kiểm tra chương trình đã cài',
+  curl: 'tải dữ liệu từ mạng', wget: 'tải dữ liệu từ mạng', rm: 'xoá file', chmod: 'đổi quyền file', 'git push': 'đẩy code lên máy chủ (git push)', 'git clone': 'tải kho code về (git clone)',
+  'npm install': 'cài thư viện (npm install)', 'npm i': 'cài thư viện (npm install)', npx: 'chạy công cụ npm (npx)', make: 'chạy make', bash: 'chạy script bash', sh: 'chạy script shell' };
+function cmdLabel(pre) {
+  const m = /^git (?:-[cC] \S+ )+(\S+)$/.exec(pre);
+  if (m) return CMD_NAMES['git ' + m[1]] || `git ${m[1]} kèm tuỳ chọn riêng`;
+  return CMD_NAMES[pre] || `lệnh "${pre}"`;
+}
+const SHELL_NOTE = ' SHELL COMMANDS: commands are checked one by one against an allow-list, so keep them simple: plain commands joined with && only. ' +
+  'No shell variables, no $(...), no heredocs, no `git -c` or `git -C` (use `cd <dir> && git ...`; the git author name and email are already set for you). ' +
+  'To run a script, write it to a file with your file tool, then run the file. If a command is blocked, do not retry it in another shape: say what you need in one plain sentence.';
 
 // Trả lời gọn: không kể lể từng bước, chỉ báo khi xong / bị chặn / cần hỏi.
 const TERSE = ' REPORTING STYLE: do not narrate what you are about to do or are doing. Work silently, then send ONE final message of at most 4 short lines, ' +
@@ -58,6 +85,7 @@ const LEAD_ROLE = 'You are the LEAD of Agent-Squad, chatting with the human thro
   'Do not run scripts/assign.sh or tmux. If a command or tool is blocked, say in one plain sentence what you need and why: ' +
   'the human sees an "Allow" button and you will be told when it is granted. ' +
   'Reply in the human\'s language, short and in plain words.' + TERSE;
+const HUMAN_NOTE = ' Your chat replies are read by a human who may be non-technical: write them in the human\'s language (the language of their messages, or of the task file if they have not written to you), in plain words, without command lines unless asked.';
 // Xin tạo agent cấp dưới: agent viết file yêu cầu, người dùng bấm xác nhận trên dashboard.
 const helperHint = (name, agentsDir) => ` HELPERS: if the work clearly needs a helper below you, create the file ${agentsDir}/requests/<helper-name>.md with these lines: ` +
   `"Name: <helper-name>" (letters, digits, - only), "Agent: claude|codex|gemini", "Model: <model>" (pick a cheaper/weaker model than your own; a helper is for simpler sub-tasks), ` +
@@ -92,7 +120,7 @@ const READ_MEMORY = (file) => `NOTE: your account or model was just changed, so 
 const RES_REMOVED = ' RESOURCES: the list of resource folders is now empty. Do not touch folders you were given before.';
 const GRANT_RE = /^(network|[A-Za-z_][A-Za-z0-9_]{0,40}(\([^\n]{1,300}\))?)$/;
 const workerRole = (name, agentsDir) => `You are a WORKER named "${name}" (chat mode, no tmux), not the lead: ignore the LEAD rules in CLAUDE.md ` +
-  'and follow the worker rules in AGENTS.md.' + TERSE +
+  'and follow the worker rules in AGENTS.md.' + HUMAN_NOTE + TERSE +
   (agentsDir ? ` Your worktree has no .agents folder: wherever the rules or messages say ".agents/", use ${agentsDir}/ instead.` +
     ' Your sandbox cannot write .git: never run git merge/commit/add/stash/checkout; the dashboard merges before each task and commits after each turn.' : '');
 // Codex chặn mọi lệnh khi .agents trong worktree là symlink ("crosses a writable symlink"), nên worker
@@ -144,6 +172,15 @@ module.exports = function setupChat({ on, send, readBody, getCtx, loadProjects, 
   function accountOf(a) {
     if (!a?.account || !['claude', 'codex'].includes(a.agent)) return null;
     return (loadAccounts() || []).find((x) => x.id === a.account && x.agent === a.agent) || null;
+  }
+  // Máy chưa đặt tên/email git thì đặt sẵn theo tên agent, để agent không phải gõ "git -c user.name=…" (dạng lệnh đó luôn bị chặn).
+  function gitEnv(name, a) {
+    try {
+      const r = spawnSync('git', ['config', 'user.email'], { cwd: a.cwd, encoding: 'utf8', timeout: 5000 });
+      if (r.status === 0 && r.stdout.trim()) return {};
+    } catch { /* không có git: bỏ qua */ }
+    const email = `${name}@agent.local`;
+    return { GIT_AUTHOR_NAME: name, GIT_AUTHOR_EMAIL: email, GIT_COMMITTER_NAME: name, GIT_COMMITTER_EMAIL: email };
   }
   function accountEnv(a) {
     const acc = accountOf(a);
@@ -223,7 +260,7 @@ module.exports = function setupChat({ on, send, readBody, getCtx, loadProjects, 
   function sysPrompt(ctx, name, a, extraDir) {
     const office = ctx.kind === 'office';
     const base = name === 'lead' ? LEAD_ROLE : workerRole(name, !office && noLink(a) && extraDir);
-    return base + (office ? OFFICE_NOTE : '') + resourcesNote(ctx, name) + (office && name === 'git' ? GIT_ROLE : '') + (useCm(ctx, a) ? CM_NOTE : '') + helperHint(name, extraDir);
+    return base + SHELL_NOTE + (office ? OFFICE_NOTE : '') + resourcesNote(ctx, name) + (office && name === 'git' ? GIT_ROLE : '') + (useCm(ctx, a) ? CM_NOTE : '') + helperHint(name, extraDir);
   }
 
   // ------------------------------------------------------------ lệnh chạy từng agent
@@ -296,10 +333,10 @@ module.exports = function setupChat({ on, send, readBody, getCtx, loadProjects, 
       t.in += u.in; t.out += u.out; t.cached += u.cached || 0;
       if (u.cost) t.cost = (t.cost || 0) + u.cost;
     };
-    const want = (g, label) => {
+    const want = (g, label, cmd) => {
       if (!GRANT_RE.test(g)) return;
       msg.grants = msg.grants || [];
-      if (!msg.grants.some((x) => x.id === g)) msg.grants.push({ id: g, label });
+      if (!msg.grants.some((x) => x.id === g)) msg.grants.push({ id: g, label, ...(cmd ? { cmd: short(cmd, 300) } : {}) });
     };
     return (ev) => {
       if (agent === 'claude') {
@@ -323,6 +360,7 @@ module.exports = function setupChat({ on, send, readBody, getCtx, loadProjects, 
           if (u) addUse({ in: num(u.input_tokens) + num(u.cache_creation_input_tokens) + num(u.cache_read_input_tokens), out: num(u.output_tokens), cached: num(u.cache_read_input_tokens), cost: num(ev.total_cost_usd) });
           if (ev.is_error && ev.result) msg.error = short(ev.result, 600);
           if (!msg.text && ev.result && !ev.is_error) msg.text = ev.result;
+          let complex = false;
           for (const d of ev.permission_denials || []) {
             const s0 = byId.get(d.tool_use_id);
             if (s0) Object.assign(s0, { icon: '⛔', error: true, denied: true, detail: toolStep(d.tool_name, d.tool_input).detail });
@@ -330,11 +368,13 @@ module.exports = function setupChat({ on, send, readBody, getCtx, loadProjects, 
             const cmd = d.tool_input?.command;
             if (d.tool_name === 'Bash' && cmd) {
               const pre = prefixesOf(cmd);
-              if (pre.length) for (const x of pre) want(`Bash(${x}:*)`, `chạy các lệnh "${x} …" (lần này: ${short(cmd, 120)})`);
-              else want('Bash(' + String(cmd).replace(/[()\n]/g, ' ').trim().slice(0, 280) + ')', `chạy lệnh: ${short(cmd, 200)}`);
+              if (pre.length) for (const x of pre) want(`Bash(${x}:*)`, cmdLabel(x), cmd);
+              else if (cmd.length <= 280 && !/[()\n]/.test(cmd)) want(`Bash(${cmd.trim()})`, 'chạy đúng một câu lệnh (xem chi tiết)', cmd);
+              else complex = true;
             }
             else if (d.tool_name) want(d.tool_name, `dùng công cụ ${d.tool_name}` + (d.tool_input?.file_path ? ` (${d.tool_input.file_path})` : d.tool_input?.url ? ` (${d.tool_input.url})` : ''));
           }
+          if (complex && !msg.grants?.length) msg.note = 'Agent dùng một lệnh ghép quá phức tạp nên bị chặn. Nhắn "làm lại bằng các lệnh đơn giản" để agent thử cách khác.';
         }
       } else if (agent === 'codex') {
         if (ev.type === 'thread.started' && ev.thread_id) onSession(ev.thread_id);
@@ -377,7 +417,7 @@ module.exports = function setupChat({ on, send, readBody, getCtx, loadProjects, 
             if (/not allowed|permission|approv|denied|disallow|confirm/i.test(err)) {
               s.denied = true; s.icon = '⛔';
               const pre = s.cmd ? (prefixesOf(s.cmd).length ? prefixesOf(s.cmd) : [firstWord(s.cmd)]) : [];
-              if (pre.length) for (const x of pre) want(`run_shell_command(${x})`, `chạy các lệnh "${x} …"`);
+              if (pre.length) for (const x of pre) want(`run_shell_command(${x})`, cmdLabel(x), s.cmd);
               else if (s.tool) want(s.tool, `dùng công cụ ${s.tool}`);
             }
           }
@@ -442,7 +482,7 @@ module.exports = function setupChat({ on, send, readBody, getCtx, loadProjects, 
     let child;
     try {
       // detached: agent và mọi lệnh con của nó cùng một nhóm tiến trình, để nút Dừng tắt được hết
-      child = spawn(cmd, args, { cwd: a.cwd, env: { ...process.env, ...accountEnv(a) }, detached: true, stdio: [stdin ? 'pipe' : 'ignore', 'pipe', 'pipe'] });
+      child = spawn(cmd, args, { cwd: a.cwd, env: { ...process.env, ...gitEnv(name, a), ...accountEnv(a) }, detached: true, stdio: [stdin ? 'pipe' : 'ignore', 'pipe', 'pipe'] });
     } catch (e) { msg.error = e.message; return finish(); }
     L.child = child;
     if (stdin) { child.stdin.on('error', () => {}); child.stdin.end(stdin); }
@@ -1075,8 +1115,8 @@ module.exports = function setupChat({ on, send, readBody, getCtx, loadProjects, 
     saveState(ctx, st);
     msg.granted = true; rewrite(ctx, name);
     if (b.retry !== false) {
-      enqueue(ctx, name, `The human granted the permission(s) you were missing: ${pick.map((g) => g.id).join(', ')}. Retry the blocked step(s) and continue the task.`,
-        { role: 'system', text: '✅ Bạn đã cho phép: ' + pick.map((g) => g.label).join('; ') + '. Agent làm tiếp…' });
+      enqueue(ctx, name, `The human granted the permission(s) you were missing: ${pick.map((g) => g.id).join(', ')}. Retry the blocked step(s) with simple commands (see SHELL COMMANDS) and continue the task.`,
+        { role: 'system', text: `✅ Đã cho phép ${pick.length} quyền. Agent làm tiếp…` });
     }
     send(res, 200, { ok: true, grants: st.grants[name] });
   });
