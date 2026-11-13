@@ -2,6 +2,8 @@
 
 Khung điều phối nhiều agent (lead + workers) để tiết kiệm token.
 
+📘 **Hướng dẫn sử dụng chi tiết (có ảnh): [`docs/huong-dan.html`](docs/huong-dan.html)**. Mở file này bằng trình duyệt (double-click trong thư mục repo).
+
 **Trên Windows (sau khi đã chạy xong 1→3 trong `windows/`): double-click `Agent-Squad.bat`.**
 Cập nhật bản mới: double-click `Update.bat` (hoặc nút "⟳ Cập nhật" trên dashboard).
 File này cập nhật code trong WSL và mở dashboard thành cửa sổ riêng; bấm "Start agents" trên dashboard để bật agent.
