@@ -58,6 +58,9 @@ Nâng cấp chính Agent-Squad bằng agent: chọn project Agent-Squad trên da
   - **🌳 Agent đang chạy**: xem cây phân cấp, kéo thả để đổi cấp trên (ghi vào `.agents/hierarchy.txt`); ở kiểu Chat còn thêm,
     đổi tên, đổi model/effort và xoá agent (cấp dưới chuyển lên cấp trên, task đang giữ về Todo, worktree được giữ lại).
   - **📊 Token**: số token mỗi agent đã dùng và tỉ lệ % theo Claude / Codex / Gemini (kiểu Chat, lưu ở `.agents/chat/usage.json`).
+    Số lấy từ báo cáo của chính CLI sau mỗi lượt, tách thành Mới / Đệm (đọc lại từ bộ nhớ đệm) / Trả lời; cột "Quy đổi" = Mới + Đệm/10 + Trả lời
+    và % tính theo cột này. Claude: chia theo model thực chạy (gồm agent phụ), lượt bị dừng vẫn cộng phần đã dùng (đánh dấu ước tính).
+    "Xem số liệu gốc" hiện nguyên báo cáo của lượt gần nhất để đối chiếu. Không biết hạn mức còn lại của gói đang dùng.
   - **👤 Tài khoản**: hồ sơ đăng nhập riêng cho Claude và Codex (ChatGPT), lưu ở `~/.agent-squad/accounts/<hồ sơ>/` (Claude dùng `CLAUDE_CONFIG_DIR`,
     Codex dùng `CODEX_HOME`). Mỗi hồ sơ đăng nhập một lần bằng dòng lệnh dashboard hiện sẵn; chọn hồ sơ cho từng agent ở 🌳 Agents > Sửa,
     các agent dùng tài khoản khác nhau chạy song song được. Khi hồ sơ tạo mới chỉ chép cài đặt cơ bản, không chép đăng nhập.

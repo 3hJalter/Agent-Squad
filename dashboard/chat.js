@@ -357,13 +357,18 @@ module.exports = function setupChat({ on, send, readBody, getCtx, loadProjects, 
       t.in += u.in; t.out += u.out; t.cached += u.cached || 0;
       if (u.cost) t.cost = (t.cost || 0) + u.cost;
     };
+    // Claude: mỗi lần gọi model đều kèm số token; giữ lại để lượt bị dừng giữa chừng (không có báo cáo cuối) vẫn tính được
+    const partial = new Map();
+    let final = false, raw = null, initModel = '';
     const want = (g, label, cmd) => {
       if (!GRANT_RE.test(g)) return;
       msg.grants = msg.grants || [];
       if (!msg.grants.some((x) => x.id === g)) msg.grants.push({ id: g, label, ...(cmd ? { cmd: short(cmd, 300) } : {}) });
     };
-    return (ev) => {
+    const parse = (ev) => {
       if (agent === 'claude') {
+        if (ev.type === 'assistant' && ev.message?.usage && ev.message.id) partial.set(ev.message.id, ev.message.usage);
+        if (ev.type === 'system' && ev.subtype === 'init' && typeof ev.model === 'string') initModel = ev.model.slice(0, 64);
         if (ev.type === 'system' && ev.subtype === 'init' && ev.session_id) onSession(ev.session_id);
         if (ev.type === 'system' && ev.subtype === 'init' && msg.cm) {
           const m = (ev.mcp_servers || []).find((x) => x.name === CM_SERVER);
@@ -381,7 +386,24 @@ module.exports = function setupChat({ on, send, readBody, getCtx, loadProjects, 
         }
         if (ev.type === 'result') {
           const u = ev.usage;
-          if (u) addUse({ in: num(u.input_tokens) + num(u.cache_creation_input_tokens) + num(u.cache_read_input_tokens), out: num(u.output_tokens), cached: num(u.cache_read_input_tokens), cost: num(ev.total_cost_usd) });
+          // modelUsage chia theo model thực chạy và gồm cả agent phụ; không có thì dùng usage của lượt
+          const models = {};
+          for (const [m, v] of Object.entries(ev.modelUsage && typeof ev.modelUsage === 'object' ? ev.modelUsage : {})) {
+            const r = { in: num(v.inputTokens) + num(v.cacheCreationInputTokens) + num(v.cacheReadInputTokens), out: num(v.outputTokens), cached: num(v.cacheReadInputTokens), cost: num(v.costUSD) };
+            if (r.in || r.out) models[String(m).slice(0, 64)] = r;
+          }
+          const ms = Object.values(models);
+          if (ms.length) {
+            msg.usage = { in: ms.reduce((t, r) => t + r.in, 0), out: ms.reduce((t, r) => t + r.out, 0), cached: ms.reduce((t, r) => t + r.cached, 0), models };
+            const cost = num(ev.total_cost_usd) || ms.reduce((t, r) => t + r.cost, 0);
+            if (cost) msg.usage.cost = cost;
+            final = true;
+          } else if (u) {
+            delete msg.usage;
+            addUse({ in: num(u.input_tokens) + num(u.cache_creation_input_tokens) + num(u.cache_read_input_tokens), out: num(u.output_tokens), cached: num(u.cache_read_input_tokens), cost: num(ev.total_cost_usd) });
+            final = !!msg.usage;
+          }
+          raw = { usage: u, modelUsage: ev.modelUsage, total_cost_usd: ev.total_cost_usd };
           if (ev.is_error && ev.result) msg.error = short(ev.result, 600);
           if (!msg.text && ev.result && !ev.is_error) msg.text = ev.result;
           let complex = false;
@@ -421,7 +443,7 @@ module.exports = function setupChat({ on, send, readBody, getCtx, loadProjects, 
           }
           if (it.type === 'error' && it.message) msg.error = short(it.message, 600);
         }
-        if (ev.type === 'turn.completed' && ev.usage) addUse({ in: num(ev.usage.input_tokens), out: num(ev.usage.output_tokens), cached: num(ev.usage.cached_input_tokens) });
+        if (ev.type === 'turn.completed' && ev.usage) { raw = { 'turn.completed': ev.usage }; addUse({ in: num(ev.usage.input_tokens), out: num(ev.usage.output_tokens), cached: num(ev.usage.cached_input_tokens) }); }
         if (ev.type === 'turn.failed') msg.error = short(ev.error?.message || 'Lỗi', 600);
         if (ev.type === 'error' && ev.message) msg.error = short(ev.message, 600);
       } else {
@@ -448,11 +470,24 @@ module.exports = function setupChat({ on, send, readBody, getCtx, loadProjects, 
         }
         if (ev.type === 'result' && (ev.stats || ev.usage)) {
           const u = ev.stats || ev.usage;
+          raw = { result: u };
           addUse({ in: num(u.input_tokens ?? u.prompt_tokens ?? u.promptTokenCount), out: num(u.output_tokens ?? u.candidates_tokens ?? u.candidatesTokenCount), cached: num(u.cached ?? u.cached_tokens ?? u.cachedContentTokenCount) });
         }
         if (ev.type === 'error') msg.error = short(ev.message || JSON.stringify(ev), 600);
       }
     };
+    // gọi khi tiến trình agent kết thúc: trả về số liệu gốc để đối chiếu; lượt Claude bị dừng thì cộng từ các lần gọi model đã xong
+    parse.done = () => {
+      if (agent === 'claude' && !final && partial.size) {
+        const us = [...partial.values()];
+        const t = { in: 0, out: 0, cached: 0, partial: true };
+        for (const u of us) { t.in += num(u.input_tokens) + num(u.cache_creation_input_tokens) + num(u.cache_read_input_tokens); t.out += num(u.output_tokens); t.cached += num(u.cache_read_input_tokens); }
+        if (initModel) t.models = { [initModel]: { in: t.in, out: t.out, cached: t.cached, cost: 0 } };
+        if (t.in || t.out) { msg.usage = t; raw = { partial_from_assistant_events: us.slice(-5), calls: us.length }; }
+      }
+      return raw;
+    };
+    return parse;
   }
 
   // Dừng ngay: SIGTERM cả nhóm tiến trình, sau 2 giây còn sống thì SIGKILL
@@ -546,7 +581,9 @@ module.exports = function setupChat({ on, send, readBody, getCtx, loadProjects, 
           catch (e) { addMessage(ctx, name, newMsg('system', 'Không đổi được: ' + e.message)); }
         };
       }
-      if (msg.usage) { try { addUsage(ctx, name, a, msg.usage, !!msg.cm); } catch (e) { console.error('usage:', e.message); } }
+      let raw = null;
+      try { raw = parse.done(); } catch { /* không bắt buộc */ }
+      if (msg.usage) { try { addUsage(ctx, name, a, msg.usage, !!msg.cm, raw); } catch (e) { console.error('usage:', e.message); } }
       addMessage(ctx, name, msg);
       if (after) after();
       if (gitByDashboard(ctx, name, a)) {
@@ -626,13 +663,20 @@ module.exports = function setupChat({ on, send, readBody, getCtx, loadProjects, 
     try { const u = JSON.parse(fs.readFileSync(usageFile(ctx), 'utf8')); if (u && typeof u.days === 'object') return u; } catch { /* chưa có */ }
     return { days: {} };
   }
-  function addUsage(ctx, name, a, u, cm) {
+  function addUsage(ctx, name, a, u, cm, raw) {
     const accId = accountOf(a) ? a.account : '';
     const all = loadUsage(ctx);
     const day = all.days[dayKey()] || (all.days[dayKey()] = {});
-    const k = `${name}|${a.agent}|${a.model || ''}` + (cm ? '|cm' : '') + (accId ? '|acc:' + accId : '');
-    const r = day[k] || (day[k] = { in: 0, out: 0, cached: 0, cost: 0, turns: 0 });
-    r.in += u.in; r.out += u.out; r.cached += u.cached || 0; r.cost += u.cost || 0; r.turns += 1;
+    // Claude báo theo từng model thực chạy (gồm agent phụ): mỗi model một dòng; lượt được tính cho model dùng nhiều nhất
+    const parts = u.models && Object.keys(u.models).length ? Object.entries(u.models) : [[a.model || '', u]];
+    const main = parts.reduce((x, y) => ((y[1].in + y[1].out) > (x[1].in + x[1].out) ? y : x))[0];
+    for (const [model, v] of parts) {
+      const k = `${name}|${a.agent}|${String(model).replace(/\|/g, '/')}` + (cm ? '|cm' : '') + (accId ? '|acc:' + accId : '');
+      const r = day[k] || (day[k] = { in: 0, out: 0, cached: 0, cost: 0, turns: 0 });
+      r.in += v.in; r.out += v.out; r.cached += v.cached || 0; r.cost += v.cost || 0;
+      if (model === main) { r.turns += 1; if (u.partial) r.partial = (r.partial || 0) + 1; }
+    }
+    if (raw) { all.last = all.last || {}; all.last[name] = { ts: Date.now(), agent: a.agent, raw: short(JSON.stringify(raw, null, 1), 3000) }; }
     fs.mkdirSync(dir(ctx), { recursive: true });
     fs.writeFileSync(usageFile(ctx), JSON.stringify(all));
   }
@@ -647,12 +691,12 @@ module.exports = function setupChat({ on, send, readBody, getCtx, loadProjects, 
       for (const [k, v] of Object.entries(all.days[d])) {
         const [name, agent, model, ...flags] = k.split('|');
         const accId = (flags.find((x) => x.startsWith('acc:')) || '').slice(4);
-        const r = rows.get(k) || { name, agent, model, cm: flags.includes('cm'), account: accId, accountName: (accs.find((x) => x.id === accId) || {}).name || accId, in: 0, out: 0, cached: 0, cost: 0, turns: 0 };
-        r.in += v.in || 0; r.out += v.out || 0; r.cached += v.cached || 0; r.cost += v.cost || 0; r.turns += v.turns || 0;
+        const r = rows.get(k) || { name, agent, model, cm: flags.includes('cm'), account: accId, accountName: (accs.find((x) => x.id === accId) || {}).name || accId, in: 0, out: 0, cached: 0, cost: 0, turns: 0, partial: 0 };
+        r.in += v.in || 0; r.out += v.out || 0; r.cached += v.cached || 0; r.cost += v.cost || 0; r.turns += v.turns || 0; r.partial += v.partial || 0;
         rows.set(k, r);
       }
     }
-    return { range: range || 'all', since: days[0] || '', rows: [...rows.values()].sort((x, y) => (y.in + y.out) - (x.in + x.out)) };
+    return { range: range || 'all', since: days[0] || '', last: all.last || {}, rows: [...rows.values()].sort((x, y) => (y.in + y.out) - (x.in + x.out)) };
   }
   on('GET', /^\/api\/usage$/, (req, res, _m, url) => send(res, 200, usage(getCtx(url), url.searchParams.get('range') || 'all')));
 
