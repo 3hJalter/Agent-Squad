@@ -139,8 +139,16 @@ const CM_NOTE = ' CONTEXT-MODE: to keep your context small, when a command or fi
 const MEMORY_SAVE = (file) => `Save your working memory so a fresh conversation can continue your work. Write the file ${file} (overwrite it) with at most 40 short lines in the human's language, with these sections: ` +
   '"## Đang làm" (current task and its status), "## Đã chốt" (decisions and conventions agreed with the human), "## File đã đụng tới" (paths), "## Bước tiếp theo", "## Lưu ý" (pitfalls and preferences the human stated). ' +
   'Facts only: if unsure write "chưa rõ". Do no other work. Then reply with exactly one line: "Đã lưu bộ nhớ."';
-const READ_MEMORY = (file) => `NOTE: your account or model was just changed, so this is a fresh conversation. Before anything else, read your memory notes in ${file} (you wrote them before the change) ` +
+const READ_MEMORY = (file) => `NOTE: this is a fresh conversation (your account or model changed, or the previous conversation was closed to save tokens). Before anything else, read your memory notes in ${file} (written before the change) ` +
   'and treat them as what you already know about this project. If a note looks outdated, check the code or the task file. Do not reply about this note separately. Now continue with the request below.\n\n';
+// Bộ nhớ chung của project: quyết định, quy ước, sở thích của người dùng. Mọi agent cùng đọc, cùng ghi thêm.
+const MEM_MAX = 12000;
+const MEMORY_NOTE = (file) => ` PROJECT MEMORY: ${file} holds the lasting decisions, conventions and preferences of the human, shared by all agents. ` +
+  'When the human states a lasting decision, preference or convention, append ONE short line to it ("- YYYY-MM-DD <fact>", in the human\'s language). ' +
+  'Never log progress, task details or things already in the code there. Keep it under 60 lines: merge or drop outdated lines instead of growing it.';
+const PROJECT_MEMORY = (text) => 'PROJECT MEMORY (shared notes of this project; treat them as facts you already know, do not reply about them):\n' + text.trim() + '\n\n';
+// Cuộc trò chuyện quá dài thì mỗi bước đều phải đọc lại toàn bộ: cho agent lưu bộ nhớ rồi mở cuộc trò chuyện mới.
+const REFRESH_DEFAULT = 120000;
 const RES_REMOVED = ' RESOURCES: the list of resource folders is now empty. Do not touch folders you were given before.';
 const GRANT_RE = /^(network|[A-Za-z_][A-Za-z0-9_]{0,40}(\([^\n]{1,300}\))?)$/;
 const workerRole = (name, agentsDir, noGit) => `You are a WORKER named "${name}" (chat mode, no tmux), not the lead: ignore the LEAD rules in CLAUDE.md ` +
@@ -216,6 +224,9 @@ module.exports = function setupChat({ on, send, readBody, getCtx, loadProjects, 
     if (!acc) return {};
     return a.agent === 'claude' ? { CLAUDE_CONFIG_DIR: acc.dir } : { CODEX_HOME: acc.dir };
   }
+  const memoryFile = (ctx) => path.join(ctx.root, '.agents', 'memory.md');
+  const readMemory = (ctx) => { try { return fs.readFileSync(memoryFile(ctx), 'utf8').slice(0, MEM_MAX); } catch { return ''; } };
+  const refreshAt = (ctx) => (Number.isFinite(ctx.refreshAt) ? ctx.refreshAt : REFRESH_DEFAULT);
   const handoffFile = (ctx, name) => path.join(ctx.root, '.agents', 'handoff', name + '.md');
   // dự phòng khi agent không ghi được bộ nhớ (ví dụ tài khoản cũ hết hạn mức): lấy phần cuối lịch sử chat đã lưu
   function writeFallbackHandoff(ctx, name) {
@@ -289,7 +300,7 @@ module.exports = function setupChat({ on, send, readBody, getCtx, loadProjects, 
   function sysPrompt(ctx, name, a, extraDir) {
     const office = ctx.kind === 'office';
     const base = name === 'lead' ? LEAD_ROLE : workerRole(name, usesWt(ctx, a) && noLink(a) && extraDir, gitByDashboard(ctx, name, a));
-    return base + SHELL_NOTE + (office ? OFFICE_NOTE : '') + (!office && !usesWt(ctx, a) && (name !== 'lead' || ctx.shared) ? SHARED_NOTE : '') + resourcesNote(ctx, name) + (office && name === 'git' ? GIT_ROLE : '') + (useCm(ctx, a) ? CM_NOTE : '') + helperHint(name, extraDir);
+    return base + SHELL_NOTE + MEMORY_NOTE(memoryFile(ctx)) + (office ? OFFICE_NOTE : '') + (!office && !usesWt(ctx, a) && (name !== 'lead' || ctx.shared) ? SHARED_NOTE : '') + resourcesNote(ctx, name) + (office && name === 'git' ? GIT_ROLE : '') + (useCm(ctx, a) ? CM_NOTE : '') + helperHint(name, extraDir);
   }
 
   // ------------------------------------------------------------ lệnh chạy từng agent
@@ -482,6 +493,11 @@ module.exports = function setupChat({ on, send, readBody, getCtx, loadProjects, 
       }
     };
     // gọi khi tiến trình agent kết thúc: trả về số liệu gốc để đối chiếu; lượt Claude bị dừng thì cộng từ các lần gọi model đã xong
+    // độ dài cuộc trò chuyện hiện tại ≈ số token đầu vào của lần gọi model gần nhất (chỉ Claude báo theo từng lần gọi)
+    parse.ctxSize = () => {
+      const u = [...partial.values()].pop();
+      return u ? num(u.input_tokens) + num(u.cache_creation_input_tokens) + num(u.cache_read_input_tokens) + num(u.output_tokens) : 0;
+    };
     parse.done = () => {
       if (agent === 'claude' && !final && partial.size) {
         const us = [...partial.values()];
@@ -523,6 +539,15 @@ module.exports = function setupChat({ on, send, readBody, getCtx, loadProjects, 
     const st = loadState(ctx);
     const a = st.agents[name];
     if (!a) { addMessage(ctx, name, newMsg('system', 'Agent này không còn trong cấu hình.')); return; }
+    if (!st.sessions[name] && st.ctxSize?.[name]) { delete st.ctxSize[name]; saveState(ctx, st); }
+    // Việc mới (bạn nhắn hoặc nhận task) mà cuộc trò chuyện đã quá dài: lưu bộ nhớ trước, rồi làm việc đó trong cuộc trò chuyện mới
+    const size = (st.ctxSize || {})[name] || 0, limit = refreshAt(ctx);
+    if (limit > 0 && size > limit && st.sessions[name] && !job.memorySave && !job.noRefresh && (job.taskId || job.display === undefined || job.display?.role === 'you')) {
+      L.queue.unshift({ ...job, noRefresh: true });
+      L.queue.unshift({ text: MEMORY_SAVE(handoffFile(ctx, name)), memorySave: true, refresh: true, startedAt: Date.now(),
+        display: { role: 'system', text: `♻️ Cuộc trò chuyện đã dài (khoảng ${Math.round(size / 1000)}k token). Agent lưu bộ nhớ rồi bắt đầu cuộc trò chuyện mới để tiết kiệm token…` } });
+      return next(ctx, name);
+    }
     if (job.display !== null) addMessage(ctx, name, newMsg(job.display?.role || 'you', job.display?.text ?? job.text, job.display?.files?.length ? { files: job.display.files } : {}));
     // Claude nhận danh sách tài nguyên mới ở mỗi lượt (system prompt); Codex/Gemini chỉ nhận ở lượt đầu nên báo thêm khi danh sách đổi
     let text = job.text;
@@ -539,6 +564,8 @@ module.exports = function setupChat({ on, send, readBody, getCtx, loadProjects, 
       text = READ_MEMORY(handoffFile(ctx, name)) + text;
       delete st.handoffRead[name]; saveState(ctx, st);
     }
+    // mọi cuộc trò chuyện mới đều nhận bộ nhớ chung của project
+    if (!st.sessions[name] && !job.memorySave) { const mem = readMemory(ctx); if (mem.trim()) text = PROJECT_MEMORY(mem) + text; }
     const { cmd, args, stdin } = buildCmd(ctx, name, a, st.sessions[name], text, (st.grants || {})[name] || []);
     const msg = newMsg('agent', '', { steps: [], running: true, agent: a.agent, ...(useCm(ctx, a) ? { cm: true } : {}) });
     L.msg = msg;
@@ -581,6 +608,13 @@ module.exports = function setupChat({ on, send, readBody, getCtx, loadProjects, 
         let saved = false;
         try { saved = !msg.error && fs.statSync(f).mtimeMs >= job.startedAt; } catch { /* chưa có */ }
         if (!saved) { try { writeFallbackHandoff(ctx, name); msg.note = 'Agent không ghi được bộ nhớ, dashboard đã lấy từ lịch sử chat thay thế.'; } catch { /* bỏ qua */ } }
+        if (job.refresh) after = () => {
+          const st2 = loadState(ctx);
+          if (st2.sessions) delete st2.sessions[name];
+          if (st2.ctxSize) delete st2.ctxSize[name];
+          st2.handoffRead = st2.handoffRead || {}; st2.handoffRead[name] = true;
+          saveState(ctx, st2);
+        };
         if (job.switchTo) after = () => {
           try { const st2 = loadState(ctx); if (st2.agents[name]) applyChange(ctx, st2, name, job.switchTo); }
           catch (e) { addMessage(ctx, name, newMsg('system', 'Không đổi được: ' + e.message)); }
@@ -588,6 +622,7 @@ module.exports = function setupChat({ on, send, readBody, getCtx, loadProjects, 
       }
       let raw = null;
       try { raw = parse.done(); } catch { /* không bắt buộc */ }
+      try { const cs = parse.ctxSize(); if (cs) { const s3 = loadState(ctx); s3.ctxSize = s3.ctxSize || {}; s3.ctxSize[name] = cs; saveState(ctx, s3); } } catch { /* không bắt buộc */ }
       if (msg.usage) { try { addUsage(ctx, name, a, msg.usage, !!msg.cm, raw); } catch (e) { console.error('usage:', e.message); } }
       addMessage(ctx, name, msg);
       if (after) after();
@@ -958,6 +993,32 @@ module.exports = function setupChat({ on, send, readBody, getCtx, loadProjects, 
     send(res, 200, { ok: true, file: handoffFile(ctx, name) });
   });
 
+  // Tab "Bộ nhớ": bộ nhớ chung của project và ghi chú riêng của từng agent
+  on('GET', /^\/api\/memory$/, (req, res, _m, url) => {
+    const ctx = getCtx(url); const st = loadState(ctx);
+    const agents = Object.keys(st.agents || {}).map((name) => {
+      let text = '', mtime = 0;
+      try { text = fs.readFileSync(handoffFile(ctx, name), 'utf8').slice(0, MEM_MAX); mtime = fs.statSync(handoffFile(ctx, name)).mtimeMs; } catch { /* chưa có */ }
+      return { name, text, mtime, ctx: (st.ctxSize || {})[name] || 0, session: !!(st.sessions || {})[name] };
+    });
+    send(res, 200, { shared: readMemory(ctx), file: memoryFile(ctx), refreshAt: refreshAt(ctx), agents });
+  });
+  on('POST', /^\/api\/memory$/, async (req, res, _m, url) => {
+    const ctx = getCtx(url); const b = await readBody(req);
+    if (typeof b.text !== 'string' || b.text.length > MEM_MAX) return send(res, 400, { error: 'Nội dung quá dài (tối đa khoảng 12.000 ký tự).' });
+    fs.mkdirSync(path.dirname(memoryFile(ctx)), { recursive: true });
+    fs.writeFileSync(memoryFile(ctx), b.text.trim() ? b.text.trimEnd() + '\n' : '');
+    send(res, 200, { ok: true });
+  });
+  on('POST', /^\/api\/memory\/agent\/([^/]+)$/, async (req, res, m, url) => {
+    const [name] = m; const ctx = getCtx(url); const b = await readBody(req);
+    if (!loadState(ctx).agents?.[name]) return send(res, 404, { error: 'Không có agent này.' });
+    if (typeof b.text !== 'string' || b.text.length > MEM_MAX) return send(res, 400, { error: 'Nội dung quá dài (tối đa khoảng 12.000 ký tự).' });
+    if (!b.text.trim()) fs.rmSync(handoffFile(ctx, name), { force: true });
+    else { fs.mkdirSync(path.dirname(handoffFile(ctx, name)), { recursive: true }); fs.writeFileSync(handoffFile(ctx, name), b.text.trimEnd() + '\n'); }
+    send(res, 200, { ok: true });
+  });
+
   // Xoá agent: cấp dưới chuyển lên cấp trên của nó, task đang giữ trở về "todo". Worktree và nhánh agent/<tên> được giữ lại.
   on('DELETE', /^\/api\/agents\/([^/]+)$/, (req, res, m, url) => {
     const [name] = m; const ctx = getCtx(url);
@@ -1051,7 +1112,7 @@ module.exports = function setupChat({ on, send, readBody, getCtx, loadProjects, 
         const lastMsg = messages(ctx, name).slice(-1)[0];
         // agent đang chờ bạn bấm "Cho phép"
         const wants = !L?.child && !!lastMsg?.grants?.length && !lastMsg.granted && !lastMsg.grants.every((g) => grants.includes(g.id));
-        return { name, agent: a.agent, model: a.model || '', effort: a.effort || '', helper: !!a.helper, account: a.account || '', busy: !!L?.child, queued: L?.queue.length || 0, grants, wants };
+        return { name, agent: a.agent, model: a.model || '', effort: a.effort || '', helper: !!a.helper, account: a.account || '', busy: !!L?.child, queued: L?.queue.length || 0, grants, wants, ctx: (st.ctxSize || {})[name] || 0 };
       }),
     };
   }
@@ -1117,10 +1178,10 @@ module.exports = function setupChat({ on, send, readBody, getCtx, loadProjects, 
           fs.writeFileSync(fp, text.replace(/^Status:.*$/m, 'Status: in-progress'));
           status = 'in-progress';
           const msg = byDash
-            ? `Do task ${id}: the dashboard already merged ${base || 'the main branch'} into your branch and will commit your changes after your turn, ` +
+            ? `Do task ${id}: the dashboard ${usesWt(ctx, st.agents[owner]) ? `already merged ${base || 'the main branch'} into your branch and ` : ''}will commit your changes after your turn, ` +
               'so do NOT run git merge or git commit (your sandbox cannot write .git). Skip those steps of the task protocol, ' +
               `do everything else: read ${path.join(ctx.root, '.agents', 'tasks', id + '.md')} and AGENTS.md, follow the task protocol. Be terse.`
-            : `Do task ${id}: ${base ? `first run 'git merge --no-edit ${base}' to get the latest code (on conflicts set Status: blocked and explain), then ` : ''}` +
+            : `Do task ${id}: ${base && usesWt(ctx, st.agents[owner]) ? `first run 'git merge --no-edit ${base}' to get the latest code (on conflicts set Status: blocked and explain), then ` : ''}` +
             `read ${noLink(st.agents[owner]) ? path.join(ctx.root, '.agents', 'tasks', id + '.md') : `.agents/tasks/${id}.md`} and AGENTS.md, follow the task protocol exactly. Be terse.`;
           enqueue(ctx, owner, msg, { role: 'system', text: `📋 Nhận việc ${id}: ${(text.split('\n')[0] || '').replace(/^#\s*(T-\d+\s*:?\s*)?/, '')}` }, { taskId: id });
         } else if (!first && last[id] !== status && (status === 'done' || status === 'blocked')) {
@@ -1182,7 +1243,16 @@ module.exports = function setupChat({ on, send, readBody, getCtx, loadProjects, 
     if (!NAME_RE.test(name)) return send(res, 400, { error: 'Tên không hợp lệ' });
     const L = live.get(key(ctx, name));
     if (L?.child) return send(res, 409, { error: 'Agent đang làm việc. Dừng lượt hiện tại trước.' });
-    const st = loadState(ctx); delete (st.sessions || {})[name]; saveState(ctx, st);
+    const st = loadState(ctx);
+    if ((st.sessions || {})[name]) {
+      // chưa có ghi chú do agent tự viết gần đây thì lấy tạm từ lịch sử chat, để cuộc trò chuyện mới không bắt đầu từ con số không
+      let recent = false;
+      try { recent = Date.now() - fs.statSync(handoffFile(ctx, name)).mtimeMs < 30 * 60 * 1000; } catch { /* chưa có */ }
+      if (!recent) { try { writeFallbackHandoff(ctx, name); } catch { /* bỏ qua */ } }
+      st.handoffRead = st.handoffRead || {};
+      if (fs.existsSync(handoffFile(ctx, name))) st.handoffRead[name] = true;
+    }
+    delete (st.sessions || {})[name]; if (st.ctxSize) delete st.ctxSize[name]; saveState(ctx, st);
     fs.rmSync(path.join(dir(ctx), name + '.jsonl'), { force: true });
     cache.delete(key(ctx, name));
     addMessage(ctx, name, newMsg('system', 'Đã bắt đầu cuộc trò chuyện mới.'));

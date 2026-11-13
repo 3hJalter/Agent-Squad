@@ -489,9 +489,11 @@ on('POST', /^\/api\/office\/scaffold$/, async (req, res, _m, url) => {
 on('POST', /^\/api\/project\/settings$/, async (req, res, _m, url) => {
   const ctx = getCtx(url);
   const b = await readBody(req);
-  if (typeof b.contextMode !== 'boolean' && b.shared !== false) return send(res, 400, { error: 'Thiếu contextMode hoặc shared' });
+  const ra = Number(b.refreshAt);
+  const hasRa = b.refreshAt !== undefined && Number.isFinite(ra) && ra >= 0 && ra <= 2000000;
+  if (typeof b.contextMode !== 'boolean' && b.shared !== false && !hasRa) return send(res, 400, { error: 'Thiếu contextMode, shared hoặc refreshAt' });
   // shared:false = quay lại "mỗi agent một bản riêng" (áp dụng ở lần Start tới); bật thư mục chung thì dùng /api/project/share
-  const ok = editProject(ctx, (pr) => { if (typeof b.contextMode === 'boolean') pr.contextMode = b.contextMode; if (b.shared === false) delete pr.shared; return true; });
+  const ok = editProject(ctx, (pr) => { if (typeof b.contextMode === 'boolean') pr.contextMode = b.contextMode; if (b.shared === false) delete pr.shared; if (hasRa) pr.refreshAt = Math.round(ra); return true; });
   if (!ok) return send(res, 404, { error: 'Không có project' });
   send(res, 200, { ok: true });
 });
