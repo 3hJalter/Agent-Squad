@@ -1072,9 +1072,12 @@ function msgHtml(m){
 function grantHtml(m){
   if(!m.grants?.length || m.running) return '';
   const have = (state?.chat?.agents.find(a=>a.name===win)?.grants)||[];
-  if(m.granted || m.grants.every(g=>have.includes(g.id))) return `<div class="hint">✅ Đã cho phép: ${esc(m.grants.map(g=>g.label).join('; '))}</div>`;
-  return `<div class="grant"><b>🔐 Agent cần thêm quyền để làm tiếp:</b><ul>${m.grants.map(g=>`<li>${esc(g.label)}</li>`).join('')}</ul>
-    <div class="row"><button class="small primary" data-grant="${esc(m.id)}">Cho phép &amp; làm tiếp</button><span class="hint">Quyền được lưu cho agent này; thu hồi ở mục Nâng cao.</span></div></div>`;
+  const names = [...new Set(m.grants.map(g=>g.label))];
+  const cmds = [...new Set(m.grants.map(g=>g.cmd).filter(Boolean))];
+  const more = `<details class="steps"><summary>Chi tiết</summary><ol>${m.grants.map(g=>`<li><span>•</span><span>${esc(g.label)} <span class="hint">${esc(g.id)}</span></span></li>`).join('')}${cmds.map(c=>`<li><span>▶</span><span>Câu lệnh bị chặn</span><pre>${esc(c)}</pre></li>`).join('')}</ol></details>`;
+  if(m.granted || m.grants.every(g=>have.includes(g.id))) return `<div class="hint" title="${esc(names.join('; '))}">✅ Đã cho phép ${m.grants.length} quyền</div>`;
+  return `<div class="grant"><b>🔐 Cần bạn cho phép:</b> ${esc(names.join(', '))}
+    <div class="row"><button class="small primary" data-grant="${esc(m.id)}">Cho phép &amp; làm tiếp</button><span class="hint">Quyền được lưu cho agent này; thu hồi ở mục Nâng cao.</span></div>${more}</div>`;
 }
 $('#chatlog').addEventListener('click',async e=>{
   const f=e.target.closest('[data-file]'); if(f){ openFile(f.dataset.file, f.dataset.name, f.dataset.kind); return }
