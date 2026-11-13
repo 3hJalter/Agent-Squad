@@ -54,7 +54,7 @@ section>h2{font-size:14px;margin:0;padding:10px 12px;border-bottom:1px solid var
 .card:hover{border-color:var(--accent)}
 .card .id{font-size:11px;color:var(--muted)}
 .card .t{font-weight:600;word-break:break-word}
-.card .o{font-size:12px;color:var(--muted)}
+.card .o{font-size:12px;color:var(--muted);display:flex;gap:6px}.card .o .tk{margin-left:auto}
 .cat{margin-bottom:6px}
 .cat>summary{font-size:12px;color:var(--muted);cursor:pointer;margin-bottom:5px;list-style:none;user-select:none}
 .cat>summary::before{content:'▾ '}
@@ -502,7 +502,7 @@ dialog.pane>.dlg-h>button[id$="Close"]{display:none}
     <div class="box"><h4>Workers (làm từng task)</h4>
       <div class="arow head"><span>Tên</span><span>Agent</span><span>Model</span><span>Effort</span><span></span></div>
       <div id="cfgWorkers" style="display:grid;gap:6px"></div>
-      <div class="row"><button id="cfgAdd" class="small">+ Thêm worker</button></div>
+      <div class="row"><button id="cfgAdd" class="small">+ Thêm worker</button><span class="spacer"></span><span class="hint">Điền nhanh:</span><button class="small" data-preset="save" title="Lead chỉ chia việc nên dùng model nhẹ; worker dùng model mặc định với effort thấp">💰 Tiết kiệm</button><button class="small" data-preset="balance" title="Model mặc định, effort vừa">⚖ Cân bằng</button><button class="small" data-preset="strong" title="Model mặc định, effort cao: tốn token hơn, hợp việc khó">💪 Mạnh</button></div>
     </div>
     <p class="hint" style="margin:0">Đặt tên để phân biệt các worker (ví dụ frontend, backend, test); để trống thì tự đặt tên. "mặc định" = để agent tự chọn model. Chọn "Khác…" để gõ tên model không có trong danh sách. Gemini CLI chưa có tuỳ chọn effort. Sau khi Start, bạn vẫn đổi model, tài khoản, cấp trên, thêm hoặc xoá agent ngay tại tab này.</p>
     <div class="row"><span class="spacer"></span><button id="cfgSave">Lưu</button><button id="cfgSaveStart" class="primary">Lưu &amp; Start</button></div>
@@ -752,6 +752,19 @@ $('#cmToggle').addEventListener('change', async e=>{
 $('#btnCfg').onclick = ()=>{cfg=loadCfg(); $('#vmTerm').hidden = isOffice(); setViewMode(isOffice() ? 'chat' : cfg.mode); renderShare(); $('#cmToggle').checked = !!state?.project?.contextMode; $('#cfgProj').textContent = '· '+($('#projSel').selectedOptions[0]?.textContent||''); $('#dlgCfg').showModal()};
 $('#cfgClose').onclick = ()=>$('#dlgCfg').close();
 $('#cfgAdd').onclick = ()=>{cfg = readCfgForm(); const w={agent:'codex',model:'',effort:''}; w.name = resolveNames([...cfg.workers, w]).pop(); cfg.workers.push(w); renderCfg()};
+// Gợi ý theo vai trò: Lead chỉ lập kế hoạch và đọc tóm tắt nên không cần model mạnh nhất
+const PRESETS = {
+  save:    { lead:{claude:'sonnet', gemini:'gemini-3.5-flash'}, worker:{claude:'sonnet', gemini:'gemini-3.5-flash'}, effort:'low',
+             say:'Đã điền kiểu Tiết kiệm: Lead và worker Claude dùng sonnet, effort thấp. Bấm Lưu để giữ.' },
+  balance: { lead:{claude:'sonnet'}, worker:{}, effort:'medium', say:'Đã điền kiểu Cân bằng: Lead dùng sonnet, worker dùng model mặc định, effort vừa. Bấm Lưu để giữ.' },
+  strong:  { lead:{}, worker:{}, effort:'high', say:'Đã điền kiểu Mạnh: model mặc định, effort cao. Bấm Lưu để giữ.' },
+};
+$('#agPlan').addEventListener('click',e=>{
+  const b=e.target.closest('[data-preset]'); if(!b) return; const P = PRESETS[b.dataset.preset];
+  cfg = readCfgForm();
+  const set = (a, models)=>{ const c = catalog[a.agent] || {models:[],efforts:[]}; const m = models[a.agent]; a.model = m && c.models.includes(m) ? m : ''; a.effort = c.efforts.includes(P.effort) ? P.effort : '' };
+  set(cfg.lead, P.lead); cfg.workers.forEach(w=>set(w, P.worker)); renderCfg(); toast(P.say,'ok');
+});
 $('#agPlan').addEventListener('click',e=>{const b=e.target.closest('.rm'); if(!b) return; cfg=readCfgForm(); cfg.workers.splice(+b.closest('.arow').dataset.i,1); renderCfg()});
 $('#agPlan').addEventListener('change',e=>{
   const row=e.target.closest('.arow'); if(!row) return;
@@ -1022,8 +1035,9 @@ function renderCatSel(){
 }
 $('#catSel').onchange = (e)=>{ localSet('cat.'+proj, e.target.value); if(state) renderBoard() };
 function cardHtml(t, k){
+  const tu = state?.chat?.taskUsage?.[t.id];
   const extra = [t.parent && t.parent.toLowerCase()!=='none' ? '↳ '+t.parent : '', t.createdBy && t.createdBy!=='lead' ? 'giao bởi '+t.createdBy : ''].filter(Boolean).join(' · ');
-  return `<div class="card s-${esc(t.status)}" data-id="${esc(t.id)}"><div class="id">${esc(t.id)}${extra?' · '+esc(extra):''}</div><div class="t">${esc(t.title||'(không tên)')}</div><div class="o">${esc(t.owner)}${t.status!==k?' · '+esc(t.status):''}</div></div>`;
+  return `<div class="card s-${esc(t.status)}" data-id="${esc(t.id)}"><div class="id">${esc(t.id)}${extra?' · '+esc(extra):''}</div><div class="t">${esc(t.title||'(không tên)')}</div><div class="o">${esc(t.owner)}${t.status!==k?' · '+esc(t.status):''}${tu?`<span class="tk" title="Token quy đổi đã dùng cho task này: ${tu.turns} lượt, gồm lượt worker làm và lượt cấp trên đọc kết quả">${fmtTok(usageEq(tu))} token</span>`:''}</div></div>`;
 }
 function colHtml(list, k){
   if(!list.length) return '<div class="empty">—</div>';

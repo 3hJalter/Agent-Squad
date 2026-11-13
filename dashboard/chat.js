@@ -635,7 +635,7 @@ module.exports = function setupChat({ on, send, readBody, getCtx, loadProjects, 
       let raw = null;
       try { raw = parse.done(); } catch { /* không bắt buộc */ }
       try { const cs = parse.ctxSize(); if (cs) { const s3 = loadState(ctx); s3.ctxSize = s3.ctxSize || {}; s3.ctxSize[name] = cs; saveState(ctx, s3); } } catch { /* không bắt buộc */ }
-      if (msg.usage) { try { addUsage(ctx, name, a, msg.usage, !!msg.cm, raw); } catch (e) { console.error('usage:', e.message); } }
+      if (msg.usage) { try { addUsage(ctx, name, a, msg.usage, !!msg.cm, raw, job.taskId ? [job.taskId] : job.costTasks || []); } catch (e) { console.error('usage:', e.message); } }
       addMessage(ctx, name, msg);
       if (after) after();
       if (gitByDashboard(ctx, name, a)) {
@@ -715,7 +715,7 @@ module.exports = function setupChat({ on, send, readBody, getCtx, loadProjects, 
     try { const u = JSON.parse(fs.readFileSync(usageFile(ctx), 'utf8')); if (u && typeof u.days === 'object') return u; } catch { /* chưa có */ }
     return { days: {} };
   }
-  function addUsage(ctx, name, a, u, cm, raw) {
+  function addUsage(ctx, name, a, u, cm, raw, taskIds = []) {
     const accId = accountOf(a) ? a.account : '';
     const all = loadUsage(ctx);
     const day = all.days[dayKey()] || (all.days[dayKey()] = {});
@@ -727,6 +727,15 @@ module.exports = function setupChat({ on, send, readBody, getCtx, loadProjects, 
       const r = day[k] || (day[k] = { in: 0, out: 0, cached: 0, cost: 0, turns: 0 });
       r.in += v.in; r.out += v.out; r.cached += v.cached || 0; r.cost += v.cost || 0;
       if (model === main) { r.turns += 1; if (u.partial) r.partial = (r.partial || 0) + 1; }
+    }
+    // token theo task: lượt worker làm task và lượt cấp trên đọc kết quả; một lượt báo nhiều task thì chia đều
+    const ids = taskIds.filter((x) => /^T-\d+$/.test(x));
+    if (ids.length) {
+      all.tasks = all.tasks || {};
+      for (const id of ids) {
+        const t = all.tasks[id] || (all.tasks[id] = { in: 0, out: 0, cached: 0, cost: 0, turns: 0 });
+        t.in += u.in / ids.length; t.out += u.out / ids.length; t.cached += (u.cached || 0) / ids.length; t.cost += (u.cost || 0) / ids.length; t.turns += 1;
+      }
     }
     if (raw) { all.last = all.last || {}; all.last[name] = { ts: Date.now(), agent: a.agent, raw: short(JSON.stringify(raw, null, 1), 3000) }; }
     fs.mkdirSync(dir(ctx), { recursive: true });
@@ -1117,7 +1126,7 @@ module.exports = function setupChat({ on, send, readBody, getCtx, loadProjects, 
   function info(ctx) {
     const st = loadState(ctx);
     return {
-      active: !!st.active,
+      active: !!st.active, taskUsage: loadUsage(ctx).tasks || {},
       agents: Object.entries(st.agents || {}).map(([name, a]) => {
         const L = live.get(key(ctx, name));
         const grants = (st.grants || {})[name] || [];
@@ -1152,6 +1161,7 @@ module.exports = function setupChat({ on, send, readBody, getCtx, loadProjects, 
       try { files = fs.readdirSync(tdir).filter((f) => /^T-\d+\.md$/.test(f)); } catch { continue; }
       const first = !seen.has(ctx.root);
       const last = seen.get(ctx.root) || {};
+      const reports = {};
       for (const f of files) {
         const id = f.slice(0, -3), fp = path.join(tdir, f);
         let text;
@@ -1202,13 +1212,22 @@ module.exports = function setupChat({ on, send, readBody, getCtx, loadProjects, 
           if (Lo && (Lo.child || Lo.committing)) continue;
           // báo người tạo task (dòng "Created by:", như scripts/notify.sh); không có agent đó thì báo lead
           const to = st.agents[creator] ? creator : 'lead';
-          const file = noLink(st.agents[to]) ? path.join(ctx.root, '.agents', 'tasks', id + '.md') : `.agents/tasks/${id}.md`;
           if (st.agents[to]) {
-            enqueue(ctx, to, `Worker updated ${id}. Read only its Status and Result in ${file}, then report ${to === 'lead' ? 'to me' : 'and continue your own task'} in 3 lines max.`,
-              { role: 'system', text: `🔔 ${id} ${status === 'done' ? 'đã xong' : 'bị chặn'} (${owner}). ${to === 'lead' ? 'Lead' : to} đang đọc kết quả…` });
+            // phần Result (và Notes nếu bị chặn) được chép sẵn vào tin, để cấp trên không tốn thêm lượt gọi công cụ đọc file
+            const sec = (re) => ((text.split(/^## /m).find((x) => re.test(x)) || '').split('\n').slice(1).join('\n').trim());
+            const body = [sec(/^Result/i) && 'Result:\n' + sec(/^Result/i), status === 'blocked' && sec(/^Notes/i) && 'Notes / questions:\n' + sec(/^Notes/i)].filter(Boolean).join('\n');
+            (reports[to] = reports[to] || []).push({ id, status, owner, body: short(body, 1500) });
           }
         }
         last[id] = status;
+      }
+      for (const [to, list] of Object.entries(reports)) {
+        const tdirShown = noLink(st.agents[to]) ? tdir : '.agents/tasks';
+        const txt = list.map((r) => `- ${r.id}: Status ${r.status} (worker ${r.owner}).${r.body ? '\n' + r.body : ' The worker left Result empty.'}`).join('\n');
+        enqueue(ctx, to, `Worker update:\n${txt}\n\nThe text above is copied from the task file${list.length > 1 ? 's' : ''} in ${tdirShown}, so do not open ${list.length > 1 ? 'them' : 'it'} unless something is unclear. ` +
+          `Report ${to === 'lead' ? 'to me' : 'and continue your own task'} in 3 lines max${list.length > 1 ? ' per task' : ''}.`,
+        { role: 'system', text: `🔔 ${list.map((r) => `${r.id} ${r.status === 'done' ? 'đã xong' : 'bị chặn'} (${r.owner})`).join(', ')}. ${to === 'lead' ? 'Lead' : to} đang đọc kết quả…` },
+        { costTasks: list.map((r) => r.id) });
       }
       seen.set(ctx.root, last);
     }

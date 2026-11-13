@@ -74,6 +74,9 @@ Nâng cấp chính Agent-Squad bằng agent: chọn project Agent-Squad trên da
     Không dùng Codex cho agent này vì sandbox của Codex không ghi được `.git`.
   - **🤖 Đội agent**: trước khi Start là bảng chọn Lead và worker; khi đang chạy là cây phân cấp, kéo thả để đổi cấp trên (ghi vào `.agents/hierarchy.txt`); ở kiểu Chat còn thêm,
     đổi tên, đổi model/effort và xoá agent (cấp dưới chuyển lên cấp trên, task đang giữ về Todo, worktree được giữ lại).
+  - **Tiết kiệm token**: khi task xong hoặc bị chặn, dashboard chép sẵn phần Result vào tin báo cho cấp trên (không phải mở file) và gộp
+    các task xong cùng lúc vào một tin. Thẻ task hiện số token quy đổi đã dùng cho task đó. Bảng "Đội agent" có nút điền nhanh
+    Tiết kiệm / Cân bằng / Mạnh (chỉ điền vào bảng, bạn vẫn bấm Lưu).
   - **📊 Token**: số token mỗi agent đã dùng và tỉ lệ % theo Claude / Codex / Gemini (kiểu Chat, lưu ở `.agents/chat/usage.json`).
     Số lấy từ báo cáo của chính CLI sau mỗi lượt, tách thành Mới / Đệm (đọc lại từ bộ nhớ đệm) / Trả lời; cột "Quy đổi" = Mới + Đệm/10 + Trả lời
     và % tính theo cột này. Claude: chia theo model thực chạy (gồm agent phụ), lượt bị dừng vẫn cộng phần đã dùng (đánh dấu ước tính).
