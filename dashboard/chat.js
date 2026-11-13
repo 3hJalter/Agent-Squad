@@ -143,10 +143,15 @@ const READ_MEMORY = (file) => `NOTE: your account or model was just changed, so 
   'and treat them as what you already know about this project. If a note looks outdated, check the code or the task file. Do not reply about this note separately. Now continue with the request below.\n\n';
 const RES_REMOVED = ' RESOURCES: the list of resource folders is now empty. Do not touch folders you were given before.';
 const GRANT_RE = /^(network|[A-Za-z_][A-Za-z0-9_]{0,40}(\([^\n]{1,300}\))?)$/;
-const workerRole = (name, agentsDir) => `You are a WORKER named "${name}" (chat mode, no tmux), not the lead: ignore the LEAD rules in CLAUDE.md ` +
+const workerRole = (name, agentsDir, noGit) => `You are a WORKER named "${name}" (chat mode, no tmux), not the lead: ignore the LEAD rules in CLAUDE.md ` +
   'and follow the worker rules in AGENTS.md.' + HUMAN_NOTE + TERSE +
-  (agentsDir ? ` Your worktree has no .agents folder: wherever the rules or messages say ".agents/", use ${agentsDir}/ instead.` +
-    ' Your sandbox cannot write .git: never run git merge/commit/add/stash/checkout; the dashboard merges before each task and commits after each turn.' : '');
+  (agentsDir ? ` Your worktree has no .agents folder: wherever the rules or messages say ".agents/", use ${agentsDir}/ instead.` : '') +
+  (noGit ? ' Your sandbox cannot write .git: never run git merge/commit/add/stash/checkout; the dashboard commits your changes after each turn.' : '');
+// Project "chung một thư mục": mọi agent làm thẳng trong thư mục project, cùng một nhánh, không có worktree và không có bước gộp.
+const SHARED_NOTE = ' SHARED FOLDER: every agent (lead and workers) works directly in the same project folder on the same git branch. There are no worktrees, ' +
+  'no agent/<name> branches and no merge step: ignore the rules about merging agent branches. Other agents may be editing other files at the same time, ' +
+  'so touch only the files your task names, never revert or reformat files you did not change, and commit only your own files (`git add <your paths>`, never `git add -A` or `git add .`).';
+const usesWt = (ctx, a) => ctx.kind !== 'office' && !!a?.cwd && path.resolve(a.cwd) !== path.resolve(ctx.root);
 // Codex chặn mọi lệnh khi .agents trong worktree là symlink ("crosses a writable symlink"), nên worker
 // Codex không có symlink .agents mà dùng đường dẫn tuyệt đối <repo>/.agents (đã cho quyền bằng --add-dir).
 const noLink = (a) => a?.agent === 'codex';
@@ -283,8 +288,8 @@ module.exports = function setupChat({ on, send, readBody, getCtx, loadProjects, 
   const useCm = (ctx, a) => !!ctx.contextMode && a?.agent === 'claude';
   function sysPrompt(ctx, name, a, extraDir) {
     const office = ctx.kind === 'office';
-    const base = name === 'lead' ? LEAD_ROLE : workerRole(name, !office && noLink(a) && extraDir);
-    return base + SHELL_NOTE + (office ? OFFICE_NOTE : '') + resourcesNote(ctx, name) + (office && name === 'git' ? GIT_ROLE : '') + (useCm(ctx, a) ? CM_NOTE : '') + helperHint(name, extraDir);
+    const base = name === 'lead' ? LEAD_ROLE : workerRole(name, usesWt(ctx, a) && noLink(a) && extraDir, gitByDashboard(ctx, name, a));
+    return base + SHELL_NOTE + (office ? OFFICE_NOTE : '') + (!office && !usesWt(ctx, a) && (name !== 'lead' || ctx.shared) ? SHARED_NOTE : '') + resourcesNote(ctx, name) + (office && name === 'git' ? GIT_ROLE : '') + (useCm(ctx, a) ? CM_NOTE : '') + helperHint(name, extraDir);
   }
 
   // ------------------------------------------------------------ lệnh chạy từng agent
@@ -704,13 +709,23 @@ module.exports = function setupChat({ on, send, readBody, getCtx, loadProjects, 
   const winName = (a) => { const m = (a.model || '').replace(/[^A-Za-z0-9_-]/g, '-'); return !m ? a.agent : m.startsWith(a.agent) ? m : `${a.agent}-${m}`; };
 
   // tạo worktree + nhánh agent/<name> cho một worker và ghi vào st.agents; trả về dòng cho workers.txt
+  // Bản sao riêng của từng agent nằm chung trong <project>-agents/<tên>; bản đã tạo kiểu cũ (<project>-<tên>) thì dùng tiếp.
+  function wtPath(ctx, name) {
+    const old = path.resolve(ctx.root, '..', `${path.basename(ctx.root)}-${name}`);
+    return fs.existsSync(old) ? old : path.resolve(ctx.root, '..', `${path.basename(ctx.root)}-agents`, name);
+  }
   async function addWorker(ctx, st, name, w, gitDir) {
     if (ctx.kind === 'office') { // project điều hành: không worktree, mọi agent làm trong thư mục văn phòng
       st.agents[name] = { agent: w.agent, model: w.model || '', effort: w.effort || '', ...(w.helper ? { helper: true } : {}), cwd: ctx.root };
       return workerLine(name, w);
     }
-    const wt = path.resolve(ctx.root, '..', `${path.basename(ctx.root)}-${name}`);
+    if (ctx.shared) { // chung một thư mục: không worktree, không nhánh riêng
+      st.agents[name] = { agent: w.agent, model: w.model || '', effort: w.effort || '', ...(w.helper ? { helper: true } : {}), cwd: ctx.root, gitDir };
+      return workerLine(name, w);
+    }
+    const wt = wtPath(ctx, name);
     if (!fs.existsSync(wt)) {
+      fs.mkdirSync(path.dirname(wt), { recursive: true });
       let r = await run('git', ['-C', ctx.root, 'worktree', 'add', wt, '-b', `agent/${name}`]);
       if (!r.ok) r = await run('git', ['-C', ctx.root, 'worktree', 'add', wt, `agent/${name}`]);
       if (!r.ok) throw new Error(`Không tạo được worktree cho ${name}: ${r.err.trim()}`);
@@ -852,8 +867,8 @@ module.exports = function setupChat({ on, send, readBody, getCtx, loadProjects, 
     if (!WORKER_RE.test(nw) || nw === 'lead' || nw === 'watch') throw new Error('Tên chỉ gồm chữ, số, dấu - và _ (tối đa 30 ký tự).');
     if (st.agents[nw]) throw new Error(`Đã có agent tên ${nw}`);
     let wt = a.cwd;
-    if (ctx.kind !== 'office') {
-      wt = path.resolve(ctx.root, '..', `${path.basename(ctx.root)}-${nw}`);
+    if (usesWt(ctx, a)) {
+      wt = path.join(path.dirname(a.cwd), path.basename(a.cwd) === old ? nw : `${path.basename(ctx.root)}-${nw}`);
       if (fs.existsSync(wt)) throw new Error(`Thư mục ${wt} đã tồn tại, hãy chọn tên khác.`);
       const b = await run('git', ['-C', ctx.root, 'branch', '-m', `agent/${old}`, `agent/${nw}`]);
       if (!b.ok) throw new Error('Không đổi được tên nhánh: ' + b.err.trim());
@@ -1085,7 +1100,7 @@ module.exports = function setupChat({ on, send, readBody, getCtx, loadProjects, 
           }
           const base = (await run('git', ['-C', ctx.root, 'branch', '--show-current'])).out.trim();
           const byDash = gitByDashboard(ctx, owner, st.agents[owner]);
-          if (byDash && base) {
+          if (byDash && base && usesWt(ctx, st.agents[owner])) {
             const cwd = st.agents[owner].cwd;
             await autoCommit(cwd, `wip: changes by ${owner} before ${id}`).catch(() => {});
             const m = await run('git', ['-C', cwd, 'merge', '--no-edit', base]);
@@ -1225,7 +1240,52 @@ module.exports = function setupChat({ on, send, readBody, getCtx, loadProjects, 
     for (const L of live.values()) { L.queue = []; if (L.child) { L.stopped = true; kill(L); n++; } }
     return n;
   }
+  // "Chuyển về thư mục chung": lưu việc đang dở của từng agent, gộp vào thư mục chính, rồi bỏ các bản sao.
+  // Dừng ngay khi gộp bị xung đột; không ép xoá thư mục nào còn file chưa lưu.
+  async function toShared(ctx) {
+    if (ctx.kind === 'office') throw new Error('Project điều hành vốn đã dùng chung một thư mục.');
+    const st = loadState(ctx);
+    const names = Object.keys(st.agents || {}).filter((n) => usesWt(ctx, st.agents[n]));
+    if (names.some((n) => isBusy(ctx, n)) || isBusy(ctx, 'lead')) throw new Error('Có agent đang làm việc. Chờ xong hoặc bấm Dừng rồi thử lại.');
+    const log = [];
+    for (const n of names) {
+      const cwd = st.agents[n].cwd;
+      if (!fs.existsSync(cwd)) continue;
+      const c = await autoCommit(cwd, `wip: changes by ${n} before moving to the shared folder`);
+      if (c) log.push(`${n}: đã lưu việc đang dở`);
+    }
+    const id = await run('git', ['-C', ctx.root, 'config', 'user.email']);
+    const who = id.out.trim() ? [] : ['-c', 'user.name=Agent-Squad', '-c', 'user.email=agent-squad@localhost'];
+    for (const n of names) {
+      const has = await run('git', ['-C', ctx.root, 'rev-parse', '--verify', '--quiet', `refs/heads/agent/${n}`]);
+      if (!has.ok) continue;
+      const m = await run('git', ['-C', ctx.root, ...who, 'merge', '--no-edit', `agent/${n}`]);
+      if (!m.ok) {
+        await run('git', ['-C', ctx.root, 'merge', '--abort']);
+        const e = new Error(`Không gộp được phần việc của ${n} vào thư mục chính: ${(m.out + m.err).trim().split('\n').slice(-3).join(' ')}`);
+        e.log = log; throw e;
+      }
+      log.push(`${n}: đã gộp vào thư mục chính`);
+    }
+    const kept = [];
+    for (const n of names) {
+      const a = st.agents[n], cwd = a.cwd;
+      try { const link = path.join(cwd, '.agents'); if (fs.lstatSync(link).isSymbolicLink()) fs.rmSync(link); } catch { /* không có */ }
+      const r = fs.existsSync(cwd) ? await run('git', ['-C', ctx.root, 'worktree', 'remove', cwd]) : { ok: true };
+      if (!r.ok) kept.push(cwd);
+      a.cwd = ctx.root;
+      // Claude gắn cuộc trò chuyện với thư mục làm việc: đổi thư mục thì mở cuộc trò chuyện mới và đọc lại bộ nhớ
+      try { writeFallbackHandoff(ctx, n); } catch { /* không bắt buộc */ }
+      if (st.sessions) delete st.sessions[n];
+      st.handoffRead = st.handoffRead || {};
+      if (fs.existsSync(handoffFile(ctx, n))) st.handoffRead[n] = true;
+      addMessage(ctx, n, newMsg('system', '📂 Project chuyển sang dùng chung một thư mục. Từ giờ agent này làm thẳng trong thư mục project, bắt đầu cuộc trò chuyện mới' + (st.handoffRead[n] ? ' và đọc lại bộ nhớ đã lưu.' : '.')));
+    }
+    saveState(ctx, st); writeWorkers(ctx, st);
+    return { moved: names, log, kept };
+  }
+
   const busyCount = () => [...live.values()].filter((L) => L.child).length;
 
-  return { start, stopAll, info, listRequests, killAll, busyCount, resolveFile, MAX_FILE, resourceInfo, isActive: (ctx) => !!loadState(ctx).active };
+  return { start, stopAll, info, listRequests, killAll, busyCount, toShared, resolveFile, MAX_FILE, resourceInfo, isActive: (ctx) => !!loadState(ctx).active };
 };

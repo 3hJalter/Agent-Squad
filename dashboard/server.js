@@ -323,7 +323,7 @@ async function addProject(dir, name, init) {
     const nm = String(name || '').trim() || path.basename(root);
     let id = slug(nm), n = 2;
     while (list.some((x) => x.id === id)) id = `${slug(nm)}-${n++}`;
-    p = { id, name: nm, path: root };
+    p = { id, name: nm, path: root, shared: true }; // project mới: mọi agent làm chung một thư mục
     list.push(p); saveProjects(list);
   }
   let setup = null;
@@ -489,10 +489,21 @@ on('POST', /^\/api\/office\/scaffold$/, async (req, res, _m, url) => {
 on('POST', /^\/api\/project\/settings$/, async (req, res, _m, url) => {
   const ctx = getCtx(url);
   const b = await readBody(req);
-  if (typeof b.contextMode !== 'boolean') return send(res, 400, { error: 'Thiếu contextMode' });
-  const ok = editProject(ctx, (pr) => { pr.contextMode = b.contextMode; return true; });
+  if (typeof b.contextMode !== 'boolean' && b.shared !== false) return send(res, 400, { error: 'Thiếu contextMode hoặc shared' });
+  // shared:false = quay lại "mỗi agent một bản riêng" (áp dụng ở lần Start tới); bật thư mục chung thì dùng /api/project/share
+  const ok = editProject(ctx, (pr) => { if (typeof b.contextMode === 'boolean') pr.contextMode = b.contextMode; if (b.shared === false) delete pr.shared; return true; });
   if (!ok) return send(res, 404, { error: 'Không có project' });
-  send(res, 200, { ok: true, contextMode: b.contextMode });
+  send(res, 200, { ok: true });
+});
+
+// Chuyển project Code sang "chung một thư mục": gộp phần việc của từng agent về thư mục chính rồi bỏ các bản sao
+on('POST', /^\/api\/project\/share$/, async (req, res, _m, url) => {
+  const ctx = getCtx(url);
+  if (ctx.kind === 'office') return send(res, 400, { error: 'Project điều hành vốn đã dùng chung một thư mục.' });
+  let r;
+  try { r = await chat.toShared(ctx); } catch (e) { return send(res, 409, { error: e.message, log: e.log || [] }); }
+  editProject(ctx, (pr) => { pr.shared = true; return true; });
+  send(res, 200, { ok: true, ...r });
 });
 
 // --- tài nguyên: folder/file ngoài project mà agent được đọc và sửa tại chỗ (xem chat.js: resourceInfo)
@@ -618,7 +629,7 @@ on('GET', /^\/api\/state$/, async (req, res, _m, url) => {
   let workersTxt = '';
   try { workersTxt = fs.readFileSync(path.join(ctx.root, '.agents', 'workers.txt'), 'utf8'); } catch { /* chưa start */ }
   send(res, 200, {
-    project: { id: ctx.id, name: ctx.name, path: ctx.root, kind: ctx.kind || '', contextMode: !!ctx.contextMode }, session: ctx.session,
+    project: { id: ctx.id, name: ctx.name, path: ctx.root, kind: ctx.kind || '', contextMode: !!ctx.contextMode, shared: !!ctx.shared }, session: ctx.session,
     ...(await sessionInfo(ctx)), chat: chat.info(ctx), requests: chat.listRequests(ctx), tasks: listTasks(ctx), workersTxt, hierarchy: readHierarchy(ctx),
     resources: chat.resourceInfo(ctx), accounts: loadAccounts().map(accountView), ...(await scaffoldState(ctx.root, ctx.kind === 'office')),
   });
