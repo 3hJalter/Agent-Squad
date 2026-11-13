@@ -1158,6 +1158,23 @@ module.exports = function setupChat({ on, send, readBody, getCtx, loadProjects, 
     send(res, 200, { ok: true });
   });
 
+  // Tab "Quyền" trong Cài đặt: người dùng tự bấm để cho phép trước một nhóm lệnh hoặc thu hồi từng quyền.
+  on('POST', /^\/api\/chat\/([^/]+)\/perm$/, async (req, res, m, url) => {
+    const [name] = m; const ctx = getCtx(url);
+    const b = await readBody(req);
+    const st = loadState(ctx);
+    if (!st.agents?.[name]) return send(res, 404, { error: 'Không tìm thấy agent' });
+    const add = Array.isArray(b.add) ? b.add.map(String) : [], remove = Array.isArray(b.remove) ? b.remove.map(String) : [];
+    if (add.length > 20 || add.some((g) => !GRANT_RE.test(g))) return send(res, 400, { error: 'Quyền không hợp lệ' });
+    if (add.includes('network') && st.agents[name].agent !== 'codex') return send(res, 400, { error: 'Quyền mạng chỉ dành cho agent Codex' });
+    st.grants = st.grants || {};
+    const cur = b.removeAll ? [] : (st.grants[name] || []).filter((g) => !remove.includes(g));
+    st.grants[name] = [...new Set([...cur, ...add])].slice(0, 60);
+    if (!st.grants[name].length) delete st.grants[name];
+    saveState(ctx, st);
+    send(res, 200, { ok: true, grants: st.grants[name] || [] });
+  });
+
   // trước khi dashboard khởi động lại: dừng các lượt đang chạy (lịch sử và trạng thái chat giữ nguyên)
   function killAll() {
     let n = 0;

@@ -234,6 +234,21 @@ main.filemode #split{display:block}
 .filecard.sel{border-color:var(--accent)}
 .atts{align-items:flex-start}
 @media (max-width:900px){main.filemode{grid-template-columns:1fr}main.filemode #split{display:none}}
+#dlgSet{width:min(1080px,96vw)}
+.setwrap{display:grid;grid-template-columns:200px minmax(0,1fr);height:min(640px,78vh)}
+.settabs{display:flex;flex-direction:column;gap:2px;padding:10px 8px;border-right:1px solid var(--line);background:var(--side)}
+.settabs button{text-align:left;border:0;background:none;padding:8px 10px;border-radius:8px;font-size:13.5px}
+.settabs button:hover{background:color-mix(in srgb,var(--line) 55%,transparent)}
+.settabs button.sel{background:var(--panel);box-shadow:0 0 0 1px var(--line);font-weight:600}
+.setbody{overflow:auto;min-width:0}
+dialog.pane{position:static;display:none;border:0;border-radius:0;width:auto!important;max-width:none;max-height:none;margin:0;padding:0;background:none;color:inherit}
+dialog.pane[open]{display:block}
+dialog.pane>.dlg-h{border-bottom:0;padding-bottom:0}
+dialog.pane>.dlg-h>button[id$="Close"]{display:none}
+#dlgSet>.dlg-h #cfgSummary{max-width:none;flex:2;text-align:right}
+.permrow{display:flex;gap:6px;flex-wrap:wrap;align-items:center}
+.permrow .chip{background:var(--panel)}
+@media (max-width:900px){.setwrap{grid-template-columns:1fr;height:auto}.settabs{flex-direction:row;flex-wrap:wrap;border-right:0;border-bottom:1px solid var(--line)}}
 </style>
 </head>
 <body>
@@ -293,16 +308,30 @@ main.filemode #split{display:block}
 </div>
 
 <dialog id="dlgSet">
-  <div class="dlg-h"><h3>⚙ Cài đặt</h3><button id="setClose" class="small">Đóng</button></div>
+  <div class="dlg-h"><h3>⚙ Cài đặt</h3><span class="hint" id="cfgSummary"></span><button id="setClose" class="small">Đóng</button></div>
+  <div class="setwrap">
+    <nav class="settabs">
+      <button id="btnCfg" title="Chọn lead, các worker và model cho lần Start tiếp theo; kiểu Chat / Terminal">🤖 Đội agent khi Start</button>
+      <button id="btnAgents" title="Agent đang có: đổi cấp trên, model, tài khoản, thêm, đổi tên, xoá">🌳 Agent đang chạy</button>
+      <button id="btnPerm" title="Xem, thu hồi và cho phép trước quyền của từng agent">🔐 Quyền</button>
+      <button id="btnAcc" title="Hồ sơ tài khoản Claude / Codex">👤 Tài khoản</button>
+      <button id="btnRes" title="Folder và file thật mà agent được đọc và sửa tại chỗ">📁 Tài nguyên<span id="resCount" class="hint"></span></button>
+      <button id="btnUsage" title="Số token mỗi agent đã dùng">📊 Token</button>
+      <button id="btnSys" title="Thông báo, cập nhật, khởi động lại">🖥 Hệ thống</button>
+    </nav>
+    <div class="setbody" id="setBody"></div>
+  </div>
+</dialog>
+<dialog id="dlgPerm">
+  <div class="dlg-h"><h3>🔐 Quyền của từng agent</h3></div>
+  <div class="dlg-b">
+    <p class="hint" style="margin:0">Mặc định agent chỉ được sửa file trong project và chạy các lệnh an toàn (xem file, git cục bộ, lệnh kiểm tra). Ở đây bạn xem quyền đã cấp thêm, thu hồi từng quyền, hoặc cho phép trước theo nhóm để agent đỡ phải hỏi. Quyền có hiệu lực từ lượt làm việc tiếp theo.</p>
+    <div id="permBody" style="display:grid;gap:8px"></div>
+  </div>
+</dialog>
+<dialog id="dlgSys">
+  <div class="dlg-h"><h3>🖥 Hệ thống</h3></div>
   <div class="dlg-b setlist">
-    <div class="sethead">Agent</div>
-    <div class="setrow"><button id="btnCfg">🤖 Agent &amp; model</button><span class="hint" id="cfgSummary"></span></div>
-    <div class="setrow"><button id="btnAgents">🌳 Cây phân cấp</button><span class="hint">Ai là cấp trên của ai; thêm, đổi tên, đổi model, đổi tài khoản, xoá agent.</span></div>
-    <div class="setrow"><button id="btnAcc">👤 Tài khoản</button><span class="hint">Hồ sơ tài khoản Claude / Codex để dùng nhiều tài khoản.</span></div>
-    <div class="sethead">Project</div>
-    <div class="setrow"><button id="btnRes">📁 Tài nguyên<span id="resCount" class="hint"></span></button><span class="hint">Folder và file thật mà agent được đọc và sửa tại chỗ.</span></div>
-    <div class="setrow"><button id="btnUsage">📊 Token</button><span class="hint">Số token mỗi agent đã dùng, chia theo Claude, Codex, Gemini.</span></div>
-    <div class="sethead">Hệ thống</div>
     <div class="setrow"><button id="btnNotify"></button><span class="hint">Báo bằng tiếng và thông báo trình duyệt khi agent xong, bị chặn hoặc cần bạn.</span></div>
     <div class="setrow"><button id="btnUpdate">⟳ Cập nhật</button><span class="hint">Tải bản Agent-Squad mới nhất từ GitHub và khởi động lại dashboard.</span></div>
     <div class="setrow"><button id="btnRestart">↻ Khởi động lại</button><span class="hint">Khởi động lại dashboard để dùng code mới trên máy.</span></div>
@@ -346,8 +375,9 @@ main.filemode #split{display:block}
 </dialog>
 
 <dialog id="dlgCfg">
-  <div class="dlg-h"><h3>Chọn agent &amp; model <span class="hint" id="cfgProj"></span></h3><button id="cfgClose" class="small">Đóng</button></div>
+  <div class="dlg-h"><h3>🤖 Đội agent khi Start <span class="hint" id="cfgProj"></span></h3><button id="cfgClose" class="small">Đóng</button></div>
   <div class="dlg-b">
+    <p class="hint" style="margin:0">Đây là thiết lập cho lần Start tiếp theo. Muốn đổi model, tài khoản hoặc cấp trên của agent đang chạy thì dùng tab "🌳 Agent đang chạy".</p>
     <div class="box"><h4>Kiểu hiển thị</h4>
       <span class="seg"><button id="vmChat">💬 Chat (dễ dùng)</button><button id="vmTerm">🖥 Terminal (như cũ)</button></span>
       <p class="hint" style="margin:0" id="vmHint"></p>
@@ -434,7 +464,7 @@ main.filemode #split{display:block}
 </dialog>
 
 <dialog id="dlgAgents">
-  <div class="dlg-h"><h3>🌳 Cây phân cấp agent</h3><button id="agClose" class="small">Đóng</button></div>
+  <div class="dlg-h"><h3>🌳 Agent đang chạy</h3><button id="agClose" class="small">Đóng</button></div>
   <div class="dlg-b">
     <div id="agReqs" class="box" hidden></div>
     <div id="agTree"></div>
@@ -969,9 +999,56 @@ function renderTabs(){
   $('#chatSub').textContent = $('#chatSub').title = win==='lead' ? 'chia việc và nói chuyện với bạn' : (workerInfo(win)||'') + (state?.hierarchy?.[win] ? ' · báo cáo cho '+state.hierarchy[win] : '');
   renderSuggest();
 }
-$('#btnSettings').onclick = ()=>$('#dlgSet').showModal();
+// Cài đặt: một hộp thoại, mỗi mục là một tab. Các hộp thoại cũ được đưa vào làm "khung" bên trong,
+// showModal() của chúng được đổi thành "mở tab đó", nên phần code còn lại không cần biết gì về tab.
+const PANES = {dlgCfg:'btnCfg', dlgAgents:'btnAgents', dlgPerm:'btnPerm', dlgAcc:'btnAcc', dlgRes:'btnRes', dlgUsage:'btnUsage', dlgSys:'btnSys'};
+for(const id of Object.keys(PANES)){
+  const d = $('#'+id); $('#setBody').append(d); d.classList.add('pane');
+  d.showModal = ()=>{
+    if(!$('#dlgSet').open) $('#dlgSet').showModal();
+    for(const o of Object.keys(PANES)) if(o!==id && $('#'+o).open) $('#'+o).close();
+    if(!d.open) d.show();
+    for(const [o,b] of Object.entries(PANES)) $('#'+b).classList.toggle('sel', o===id);
+    localSet('setTab', id); $('#setBody').scrollTop = 0;
+  };
+  // khung tự đóng (ví dụ bấm "Lưu") mà không mở khung khác thì đóng luôn Cài đặt
+  d.addEventListener('close', ()=>setTimeout(()=>{ if($('#dlgSet').open && !Object.keys(PANES).some(o=>$('#'+o).open)) $('#dlgSet').close() }, 0));
+}
+$('#dlgSet').addEventListener('close', e=>{ if(e.target===$('#dlgSet')) for(const o of Object.keys(PANES)) if($('#'+o).open) $('#'+o).close() });
+$('#btnSettings').onclick = ()=>{ const b = PANES[localGet('setTab')] || 'btnCfg'; $('#'+b).click() };
 $('#setClose').onclick = ()=>$('#dlgSet').close();
-$('#dlgSet').addEventListener('click', e=>{ const b = e.target.closest('.setrow>button'); if(b && b.id!=='btnNotify') $('#dlgSet').close() });
+$('#btnSys').onclick = ()=>$('#dlgSys').showModal();
+
+// ---------------------------------------------------------------- quyền của agent
+const PERM_GROUPS = [
+  {label:'Python', cmds:['python','python3','pip','pip3']},
+  {label:'.NET / Unity', cmds:['dotnet','which']},
+  {label:'Cài thư viện npm', cmds:['npm install','npx']},
+  {label:'Tải từ mạng', cmds:['curl','wget']},
+  {label:'Đẩy code (git push)', cmds:['git push']},
+];
+const permIds = (agent, cmds)=> agent==='claude' ? cmds.map(c=>`Bash(${c}:*)`) : agent==='gemini' ? cmds.map(c=>`run_shell_command(${c})`) : [];
+const permName = (id)=> id==='network' ? 'truy cập mạng' : id.replace(/^Bash\((.*?)(:\*)?\)$/,'$1').replace(/^run_shell_command\((.*)\)$/,'$1');
+function renderPerm(){
+  const box = $('#permBody'); if(!box || !$('#dlgPerm').open) return;
+  if(!chatOn()){ box.innerHTML = '<p class="hint">Phần này dùng ở kiểu Chat, sau khi đã Start agents.</p>'; return }
+  box.innerHTML = state.chat.agents.map(a=>{
+    const g = a.grants||[];
+    const groups = a.agent==='codex' ? [{label:'Truy cập mạng', ids:['network']}] : PERM_GROUPS.map(x=>({label:x.label, ids:permIds(a.agent, x.cmds)}));
+    return `<div class="box" data-agent="${esc(a.name)}"><h4>${esc(winLabel(a.name))} <span class="hint">${esc(descr(a))}</span></h4>
+      <div class="permrow">${g.length ? g.map(id=>`<span class="chip" title="${esc(id)}">${esc(permName(id))}<button data-rm="${esc(id)}" title="Thu hồi quyền này">✕</button></span>`).join('') + '<button class="small danger" data-rmall>Thu hồi tất cả</button>' : '<span class="hint">Chưa cấp thêm quyền nào.</span>'}</div>
+      <div class="permrow"><span class="hint">Cho phép trước:</span>${groups.map(x=>{ const has = x.ids.every(i=>g.includes(i)); return `<button class="small" data-add="${esc(JSON.stringify(x.ids))}"${has?' disabled':''}>${has?'✓ ':'+ '}${esc(x.label)}</button>` }).join('')}</div></div>`;
+  }).join('') || '<p class="hint">Chưa có agent nào.</p>';
+}
+$('#btnPerm').onclick = ()=>{ $('#dlgPerm').showModal(); renderPerm() };
+$('#permBody').addEventListener('click', async e=>{
+  const row = e.target.closest('[data-agent]'); if(!row) return; const name = row.dataset.agent; let body;
+  if(e.target.dataset.rm) body = {remove:[e.target.dataset.rm]};
+  else if('rmall' in e.target.dataset){ if(!confirm('Thu hồi mọi quyền đã cấp thêm cho '+name+'?')) return; body = {removeAll:true} }
+  else if(e.target.dataset.add) body = {add:JSON.parse(e.target.dataset.add)};
+  else return;
+  try{ await api('POST',`/api/chat/${encodeURIComponent(name)}/perm`, body); await refreshState(); renderPerm() }catch(x){ toast(x.message,'err') }
+});
 $('#showWatch').onchange = ()=>{ if(state) renderTabs() };
 
 const SUGGEST = {
@@ -1034,7 +1111,7 @@ async function refreshState(){
     $('#sdot').classList.toggle('on', isRunning());
     $('#stext').textContent = chatOn() ? `đang chạy (chat) · ${state.chat.agents.length} agent` : state.running ? `đang chạy (terminal) · ${state.windows.length} window` : `chưa chạy`;
     $('#stext').parentElement.title = state.project.path + ' · phiên tmux ' + state.session;
-    renderBoard(); renderTabs(); notifyChanges(); notifyAgents(); renderBanner(); renderReqs(); renderRes(); renderAcc();
+    renderBoard(); renderTabs(); notifyChanges(); notifyAgents(); renderBanner(); renderReqs(); renderRes(); renderAcc(); renderPerm();
     if($('#dlgAgents').open && !agEditing && !agDrag && !document.activeElement?.closest?.('#agTree')) renderAgents();
     $('#btnCleanup').hidden = !state.tasks.some(t=>t.status==='done'); $('#btnClearChat').hidden = !isRunning();
   }catch(e){$('#stext').textContent='mất kết nối tới server'; $('#sdot').classList.remove('on')}
@@ -1153,8 +1230,8 @@ function msgHtml(m){
   const time = new Date(m.ts).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'});
   if(m.role==='you') return `<div class="msg you" title="${esc(time)}">${esc(m.text)}${filesHtml(m)}</div>`;
   if(m.role==='system') return `<div class="msg system">${esc(m.text)} · ${esc(time)}</div>`;
-  const who = (win==='lead'?'👑 Lead':'🛠 '+win) + (m.agent?' · '+m.agent:'') + ' · ' + time + (m.usage?' · '+fmtTok(m.usage.in+m.usage.out)+' token':'');
-  return `<div class="msg agent"><div class="who">${esc(who)}</div>${stepsHtml(m)}${m.text?md(m.text):''}${m.running&&!m.text?'<span class="typing"><i></i><i></i><i></i></span>':''}${filesHtml(m)}${m.error?`<div class="errbox">⚠️ ${esc(m.error)}</div>`:''}${grantHtml(m)}${m.note?`<div class="hint">${esc(m.note)}</div>`:''}</div>`;
+  const who = (win==='lead'?'👑 Lead':'🛠 '+win) + (m.agent?' · '+m.agent:'') + ' · ' + time;
+  return `<div class="msg agent"><div class="who" title="${m.usage?esc(fmtTok(m.usage.in+m.usage.out)+' token trong lượt này'):''}">${esc(who)}</div>${stepsHtml(m)}${m.text?md(m.text):''}${m.running&&!m.text?'<span class="typing"><i></i><i></i><i></i></span>':''}${filesHtml(m)}${m.error?`<div class="errbox">⚠️ ${esc(m.error)}</div>`:''}${grantHtml(m)}${m.note?`<div class="hint">${esc(m.note)}</div>`:''}</div>`;
 }
 function grantHtml(m){
   if(!m.grants?.length || m.running) return '';
@@ -1164,7 +1241,7 @@ function grantHtml(m){
   const more = `<details class="steps"><summary>Chi tiết</summary><ol>${m.grants.map(g=>`<li><span>•</span><span>${esc(g.label)} <span class="hint">${esc(g.id)}</span></span></li>`).join('')}${cmds.map(c=>`<li><span>▶</span><span>Câu lệnh bị chặn</span><pre>${esc(c)}</pre></li>`).join('')}</ol></details>`;
   if(m.granted || m.grants.every(g=>have.includes(g.id))) return `<div class="hint" title="${esc(names.join('; '))}">✅ Đã cho phép ${m.grants.length} quyền</div>`;
   return `<div class="grant"><b>🔐 Cần bạn cho phép:</b> ${esc(names.join(', '))}
-    <div class="row"><button class="small primary" data-grant="${esc(m.id)}">Cho phép &amp; làm tiếp</button><span class="hint">Quyền được lưu cho agent này; thu hồi ở mục Nâng cao.</span></div>${more}</div>`;
+    <div class="row"><button class="small primary" data-grant="${esc(m.id)}">Cho phép &amp; làm tiếp</button><span class="hint">Quyền được lưu cho agent này; xem và thu hồi ở ⚙ Cài đặt &gt; Quyền.</span></div>${more}</div>`;
 }
 $('#chatlog').addEventListener('click',async e=>{
   const f=e.target.closest('[data-file]'); if(f){ openFile(f.dataset.file, f.dataset.name, f.dataset.kind); return }
