@@ -15,7 +15,7 @@ Nâng cấp chính Agent-Squad bằng agent: chọn project Agent-Squad trên da
 - `scripts/start-agents.sh`: dựng phiên tmux (lead và workers là claude/codex/gemini, mỗi worker một git worktree).
   Mỗi agent viết `[<tên>=]<agent>[@<model>][#<effort>]` (tên chỉ cho worker, để phân biệt nhiều worker cùng model), ví dụ
   `LEAD="codex@gpt-6.1-sol#high" WORKERS="claude@opus#xhigh gemini@gemini-3.5-flash" scripts/start-agents.sh`
-  (trên dashboard: "⚙ Cài đặt" > "Đội agent khi Start"; danh sách model/effort ở `dashboard/catalog.json`).
+  (trên dashboard: "⚙ Cài đặt" > "Đội agent"; danh sách model/effort ở `dashboard/catalog.json`).
   Lead không gọi được tmux (ví dụ Codex trong sandbox) thì đặt `Status: ready`, `watch-tasks.sh` sẽ tự giao.
 - `scripts/assign.sh <ID> <worker>`: lead giao task.
 - `scripts/watch-tasks.sh`: chạy nền trong window `watch`, tự báo lead khi một task chuyển sang `done`/`blocked`
@@ -28,13 +28,13 @@ Nâng cấp chính Agent-Squad bằng agent: chọn project Agent-Squad trên da
   thư mục chưa là repo thì tự `git init` + commit đầu. Mỗi project một phiên tmux riêng, danh sách lưu ở
   `~/.agent-squad/projects.json` (xoá khỏi danh sách không xoá file). Dashboard tự tạo file khung nếu repo chưa có.
 - Bố cục: cột trái là project và danh sách agent (bấm để mở chat), giữa là chat, cột phải là Tasks. Mọi mục cài đặt
-  nằm trong nút **⚙ Cài đặt** ở góc dưới cột trái, chia tab: "Đội agent khi Start", "Agent đang chạy" (cây phân cấp), "Quyền",
+  nằm trong nút **⚙ Cài đặt** ở góc dưới cột trái, chia tab: "Đội agent" (một bảng duy nhất, kèm cây phân cấp), "Cách làm việc", "Quyền",
   "Tài khoản", "Tài nguyên", "Token", "Hệ thống" (thông báo, cập nhật, khởi động lại).
   Tab **🔐 Quyền** (kiểu Chat): xem quyền đã cấp thêm cho từng agent, thu hồi từng quyền, hoặc cho phép trước theo nhóm
   (Python, .NET / Unity, cài thư viện npm, tải từ mạng, git push; với Codex là quyền mạng). Vẫn là bạn tự bấm, không có chế độ bỏ qua toàn bộ.
 - Trong chat: các bước agent làm gom thành một dòng ("Đã làm 6 bước · sửa 2 file"), mỗi bước ghi bằng lời, bấm vào mới thấy câu lệnh.
   Ảnh hiện thẳng trong chat; bấm ảnh hoặc thẻ file thì mở ở cột phải (file `.md` hiện dạng tài liệu), bấm ✕ để quay lại Tasks.
-- Thư mục làm việc của agent (project Code, kiểu Chat; chọn trong "⚙ Cài đặt" > "Đội agent khi Start"):
+- Thư mục làm việc của agent (project Code, kiểu Chat; chọn trong "⚙ Cài đặt" > "Cách làm việc"):
   - **Chung một thư mục** (mặc định cho project mới): mọi agent làm thẳng trong thư mục project, cùng một nhánh, không có bước "Gộp code".
     Hợp với project Unity hoặc đội ít agent. Agent được dặn chỉ sửa file của task mình và chỉ commit file của mình.
   - **Mỗi agent một bản riêng**: mỗi worker có một git worktree và nhánh `agent/<tên>` trong `<project>-agents/<tên>` (bản tạo kiểu cũ
@@ -49,7 +49,7 @@ Nâng cấp chính Agent-Squad bằng agent: chọn project Agent-Squad trên da
   - **Tự làm mới cuộc trò chuyện**: khi cuộc trò chuyện của một agent Claude vượt ngưỡng (mặc định 120k token, chỉnh hoặc tắt trong tab)
     và có việc mới (bạn nhắn hoặc nhận task), agent ghi ghi chú rồi làm việc đó trong cuộc trò chuyện mới. Codex / Gemini chưa đo được độ dài.
   - context-mode không phải bộ nhớ: nó chỉ giữ dữ liệu lớn ở ngoài cuộc trò chuyện.
-- Kiểu hiển thị (trong "⚙ Cài đặt" > "Đội agent khi Start"):
+- Kiểu hiển thị (trong "⚙ Cài đặt" > "Cách làm việc"):
   - **💬 Chat** (mặc định, `dashboard/chat.js`): agent chạy ẩn (`claude -p`, `codex exec`, `gemini -p`), dashboard hiện
     tin nhắn dạng chat với các bước làm thu gọn được. Lead giao việc bằng `Status: ready`, dashboard tự chạy worker
     và báo lead khi task xong. Quyền ban đầu an toàn: sửa file trong project, chạy lệnh git và lệnh kiểm tra, Codex
@@ -70,19 +70,19 @@ Nâng cấp chính Agent-Squad bằng agent: chọn project Agent-Squad trên da
   - **🔀 Agent git** (project điều hành): tự có một agent tên `git` (Claude, model haiku) là agent duy nhất chạy commit/pull/merge/push trong các
     thư mục tài nguyên; Lead giao việc cho nó bằng task `Owner: git`. Các agent khác bị dặn không chạy git ở đó. Push vẫn cần bạn bấm "Cho phép".
     Không dùng Codex cho agent này vì sandbox của Codex không ghi được `.git`.
-  - **🌳 Agent đang chạy**: xem cây phân cấp, kéo thả để đổi cấp trên (ghi vào `.agents/hierarchy.txt`); ở kiểu Chat còn thêm,
+  - **🤖 Đội agent**: trước khi Start là bảng chọn Lead và worker; khi đang chạy là cây phân cấp, kéo thả để đổi cấp trên (ghi vào `.agents/hierarchy.txt`); ở kiểu Chat còn thêm,
     đổi tên, đổi model/effort và xoá agent (cấp dưới chuyển lên cấp trên, task đang giữ về Todo, worktree được giữ lại).
   - **📊 Token**: số token mỗi agent đã dùng và tỉ lệ % theo Claude / Codex / Gemini (kiểu Chat, lưu ở `.agents/chat/usage.json`).
     Số lấy từ báo cáo của chính CLI sau mỗi lượt, tách thành Mới / Đệm (đọc lại từ bộ nhớ đệm) / Trả lời; cột "Quy đổi" = Mới + Đệm/10 + Trả lời
     và % tính theo cột này. Claude: chia theo model thực chạy (gồm agent phụ), lượt bị dừng vẫn cộng phần đã dùng (đánh dấu ước tính).
     "Xem số liệu gốc" hiện nguyên báo cáo của lượt gần nhất để đối chiếu. Không biết hạn mức còn lại của gói đang dùng.
   - **👤 Tài khoản**: hồ sơ đăng nhập riêng cho Claude và Codex (ChatGPT), lưu ở `~/.agent-squad/accounts/<hồ sơ>/` (Claude dùng `CLAUDE_CONFIG_DIR`,
-    Codex dùng `CODEX_HOME`). Mỗi hồ sơ đăng nhập một lần bằng dòng lệnh dashboard hiện sẵn; chọn hồ sơ cho từng agent ở 🌳 Agents > Sửa,
+    Codex dùng `CODEX_HOME`). Mỗi hồ sơ đăng nhập một lần bằng dòng lệnh dashboard hiện sẵn; chọn hồ sơ cho từng agent ở 🤖 Đội agent > Sửa,
     các agent dùng tài khoản khác nhau chạy song song được. Khi hồ sơ tạo mới chỉ chép cài đặt cơ bản, không chép đăng nhập.
     Đổi tài khoản hoặc model thì agent bắt đầu cuộc trò chuyện mới; mặc định agent **ghi bộ nhớ ra `.agents/handoff/<tên>.md` trước khi đổi** và đọc lại sau đó
     (nếu agent không ghi được, ví dụ hết hạn mức, dashboard lấy phần cuối lịch sử chat thay thế). Nút "💾 Cập nhật bộ nhớ ngay" ghi bộ nhớ bất cứ lúc nào.
     Bảng Token hiện theo tài khoản. Gemini chưa hỗ trợ.
-  - **⚡ context-mode** (thử nghiệm, "Đội agent khi Start", tắt mặc định, theo project): agent Claude nạp MCP server
+  - **⚡ context-mode** (thử nghiệm, "Cách làm việc", tắt mặc định, theo project): agent Claude nạp MCP server
     [mksglu/context-mode](https://github.com/mksglu/context-mode) (`npx -y context-mode`, cần Node.js 22.5+) để dữ liệu lớn (log dài, nhiều file) không đổ hết vào ngữ cảnh.
     Chỉ cho Claude, đổi xong áp dụng từ lượt sau. Rủi ro: nó cho agent chạy code trong ô riêng, nằm ngoài danh sách lệnh an toàn và nút "Cho phép"
     (dashboard hỏi lại khi bật). Bảng Token đánh dấu ⚡ và có cột TB/lượt để so sánh trước và sau.

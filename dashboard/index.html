@@ -312,8 +312,8 @@ dialog.pane>.dlg-h>button[id$="Close"]{display:none}
   <div class="dlg-h"><h3>⚙ Cài đặt</h3><span class="hint" id="cfgSummary"></span><button id="setClose" class="small">Đóng</button></div>
   <div class="setwrap">
     <nav class="settabs">
-      <button id="btnCfg" title="Chọn lead, các worker và model cho lần Start tiếp theo; kiểu Chat / Terminal">🤖 Đội agent khi Start</button>
-      <button id="btnAgents" title="Agent đang có: đổi cấp trên, model, tài khoản, thêm, đổi tên, xoá">🌳 Agent đang chạy</button>
+      <button id="btnAgents" title="Lead và các worker: model, tài khoản, cấp trên; thêm, đổi tên, xoá">🤖 Đội agent</button>
+      <button id="btnCfg" title="Kiểu Chat / Terminal, thư mục làm việc của agent, tiết kiệm token">🧭 Cách làm việc</button>
       <button id="btnPerm" title="Xem, thu hồi và cho phép trước quyền của từng agent">🔐 Quyền</button>
       <button id="btnMem" title="Bộ nhớ chung của project và ghi chú riêng của từng agent">🧠 Bộ nhớ</button>
       <button id="btnAcc" title="Hồ sơ tài khoản Claude / Codex">👤 Tài khoản</button>
@@ -398,9 +398,8 @@ dialog.pane>.dlg-h>button[id$="Close"]{display:none}
 </dialog>
 
 <dialog id="dlgCfg">
-  <div class="dlg-h"><h3>🤖 Đội agent khi Start <span class="hint" id="cfgProj"></span></h3><button id="cfgClose" class="small">Đóng</button></div>
+  <div class="dlg-h"><h3>🧭 Cách làm việc <span class="hint" id="cfgProj"></span></h3><button id="cfgClose" class="small">Đóng</button></div>
   <div class="dlg-b">
-    <p class="hint" style="margin:0">Đây là thiết lập cho lần Start tiếp theo. Muốn đổi model, tài khoản hoặc cấp trên của agent đang chạy thì dùng tab "🌳 Agent đang chạy".</p>
     <div class="box"><h4>Kiểu hiển thị</h4>
       <span class="seg"><button id="vmChat">💬 Chat (dễ dùng)</button><button id="vmTerm">🖥 Terminal (như cũ)</button></span>
       <p class="hint" style="margin:0" id="vmHint"></p>
@@ -413,17 +412,6 @@ dialog.pane>.dlg-h>button[id$="Close"]{display:none}
       <label style="display:flex;gap:6px;align-items:center;color:var(--text)"><input type="checkbox" id="cmToggle"> Bật context-mode cho các agent Claude của project này</label>
       <p class="hint" style="margin:0">context-mode (<code>mksglu/context-mode</code>) giữ dữ liệu lớn như log dài hay nhiều file ngoài ngữ cảnh, chỉ đưa cho agent kết quả cần dùng. Cần Node.js 22.5 trở lên trong WSL và có mạng ở lần chạy đầu (tải bằng npx). Chỉ áp dụng cho agent Claude, từ lượt nhắn tiếp theo, không cần Start lại. So sánh ở bảng 📊 Token: dòng có ⚡ là lượt chạy có context-mode, nhìn cột "TB/lượt". <b>Rủi ro:</b> nó cho agent chạy code trong ô riêng, nên danh sách lệnh an toàn và nút "Cho phép" không kiểm soát được phần này.</p>
     </div>
-    <div class="box"><h4>Lead (nói chuyện với bạn, chia và giao việc)</h4>
-      <div class="arow head"><span>Tên</span><span>Agent</span><span>Model</span><span>Effort</span><span></span></div>
-      <div id="cfgLead"></div>
-    </div>
-    <div class="box"><h4>Workers (làm từng task)</h4>
-      <div class="arow head"><span>Tên</span><span>Agent</span><span>Model</span><span>Effort</span><span></span></div>
-      <div id="cfgWorkers" style="display:grid;gap:6px"></div>
-      <div class="row"><button id="cfgAdd" class="small">+ Thêm worker</button></div>
-    </div>
-    <p class="hint" style="margin:0">Đặt tên để phân biệt các worker (ví dụ frontend, backend, test); nhiều worker dùng cùng agent và model vẫn được, để trống thì tự đặt tên. "mặc định" = để agent tự chọn. Chọn "Khác…" để gõ tên model không có trong danh sách (danh sách nằm ở dashboard/catalog.json). Gemini CLI chưa có tuỳ chọn effort. Cấu hình lưu riêng cho từng project và chỉ áp dụng khi Start: nếu phiên đang chạy thì Stop rồi Start lại.</p>
-    <div class="row"><span class="spacer"></span><button id="cfgSave">Lưu</button><button id="cfgSaveStart" class="primary">Lưu &amp; Start</button></div>
   </div>
 </dialog>
 
@@ -463,7 +451,7 @@ dialog.pane>.dlg-h>button[id$="Close"]{display:none}
 <dialog id="dlgAcc">
   <div class="dlg-h"><h3>👤 Tài khoản</h3><button id="accClose" class="small">Đóng</button></div>
   <div class="dlg-b">
-    <p class="hint" style="margin:0">Mỗi hồ sơ là một tài khoản Claude hoặc Codex (ChatGPT) đăng nhập riêng. Agent không chọn hồ sơ thì dùng tài khoản đang đăng nhập sẵn trong WSL. Chọn hồ sơ cho từng agent ở mục 🌳 Agents, bấm "✏️ Sửa". Các agent dùng tài khoản khác nhau chạy song song được.</p>
+    <p class="hint" style="margin:0">Mỗi hồ sơ là một tài khoản Claude hoặc Codex (ChatGPT) đăng nhập riêng. Agent không chọn hồ sơ thì dùng tài khoản đang đăng nhập sẵn trong WSL. Chọn hồ sơ cho từng agent ở tab 🤖 Đội agent, bấm "✏️ Sửa". Các agent dùng tài khoản khác nhau chạy song song được.</p>
     <div id="accList" style="display:grid;gap:8px"></div>
     <div class="box"><h4>➕ Tạo hồ sơ</h4>
       <div class="agadd">
@@ -491,10 +479,25 @@ dialog.pane>.dlg-h>button[id$="Close"]{display:none}
 </dialog>
 
 <dialog id="dlgAgents">
-  <div class="dlg-h"><h3>🌳 Agent đang chạy</h3><button id="agClose" class="small">Đóng</button></div>
+  <div class="dlg-h"><h3>🤖 Đội agent <span class="hint" id="agProj"></span></h3><button id="agClose" class="small">Đóng</button></div>
   <div class="dlg-b">
+    <p class="hint" style="margin:0" id="agIntro"></p>
     <div id="agReqs" class="box" hidden></div>
     <div id="agTree"></div>
+    <div id="agPlan" style="display:grid;gap:12px">
+    <h4 id="agPlanH" style="margin:0" hidden>Cho lần Start tiếp theo</h4>
+    <div class="box"><h4>Lead (nói chuyện với bạn, chia và giao việc)</h4>
+      <div class="arow head"><span>Tên</span><span>Agent</span><span>Model</span><span>Effort</span><span></span></div>
+      <div id="cfgLead"></div>
+    </div>
+    <div class="box"><h4>Workers (làm từng task)</h4>
+      <div class="arow head"><span>Tên</span><span>Agent</span><span>Model</span><span>Effort</span><span></span></div>
+      <div id="cfgWorkers" style="display:grid;gap:6px"></div>
+      <div class="row"><button id="cfgAdd" class="small">+ Thêm worker</button></div>
+    </div>
+    <p class="hint" style="margin:0">Đặt tên để phân biệt các worker (ví dụ frontend, backend, test); để trống thì tự đặt tên. "mặc định" = để agent tự chọn model. Chọn "Khác…" để gõ tên model không có trong danh sách. Gemini CLI chưa có tuỳ chọn effort. Sau khi Start, bạn vẫn đổi model, tài khoản, cấp trên, thêm hoặc xoá agent ngay tại tab này.</p>
+    <div class="row"><span class="spacer"></span><button id="cfgSave">Lưu</button><button id="cfgSaveStart" class="primary">Lưu &amp; Start</button></div>
+    </div>
     <div class="box" id="agAddBox"><h4>➕ Thêm agent</h4>
       <div class="agadd">
         <label>Tên<input id="aaName" maxlength="30" placeholder="vd: tester" style="width:120px"></label>
@@ -683,7 +686,7 @@ function readRow(r){
 }
 function readCfgForm(){
   const workers=[...document.querySelectorAll('#cfgWorkers .arow')].map(readRow);
-  return {mode: $('#vmTerm').classList.contains('sel')?'terminal':'chat', lead: readRow($('#cfgLead .arow')), workers: workers.length?workers:[{agent:'codex',model:'',effort:''}]};
+  return {mode: cfg.mode==='terminal'?'terminal':'chat', lead: readRow($('#cfgLead .arow')), workers: workers.length?workers:[{agent:'codex',model:'',effort:''}]};
 }
 function setViewMode(m){
   $('#vmChat').classList.toggle('sel',m!=='terminal'); $('#vmTerm').classList.toggle('sel',m==='terminal');
@@ -691,11 +694,14 @@ function setViewMode(m){
     ? 'Hiện đúng màn hình terminal của từng agent (tmux). Agent hỏi xác nhận thì bạn bấm nút chọn. Có đủ mọi lệnh, kể cả push.'
     : 'Tin nhắn dạng chat như app Claude, xem được từng bước agent làm. Bắt đầu với quyền an toàn (sửa file trong project, chạy lệnh git và lệnh kiểm tra). Khi agent cần thêm quyền, tin nhắn hiện nút "Cho phép" để bạn bấm.';
 }
-$('#vmChat').onclick=()=>setViewMode('chat'); $('#vmTerm').onclick=()=>setViewMode('terminal');
+function pickViewMode(m){
+  setViewMode(m); if(cfg.mode===m) return;
+  cfg.mode = m; localSet('cfg.'+proj, JSON.stringify(cfg)); $('#cfgSummary').textContent = $('#cfgSummary').title = cfgSummaryText();
+  toast(isRunning() ? 'Đã đổi kiểu hiển thị. Stop rồi Start lại để áp dụng.' : 'Đã đổi kiểu hiển thị. Áp dụng khi bạn bấm Start.', 'ok');
+}
+$('#vmChat').onclick=()=>pickViewMode('chat'); $('#vmTerm').onclick=()=>pickViewMode('terminal');
 const isOffice = ()=> (state?.project?.kind || projects.find(p=>p.id===proj)?.kind) === 'office';
 function renderCfg(){
-  $('#vmTerm').hidden = isOffice();
-  setViewMode(isOffice() ? 'chat' : cfg.mode);
   $('#cfgLead').innerHTML = agentRow(cfg.lead, 0, false);
   $('#cfgWorkers').innerHTML = cfg.workers.map((w,i)=>agentRow(w,i,true)).join('');
 }
@@ -734,17 +740,17 @@ $('#cmToggle').addEventListener('change', async e=>{
   try{ await api('POST','/api/project/settings',{contextMode:want}); toast(want?'Đã bật context-mode. Áp dụng từ lượt nhắn tiếp theo của agent Claude.':'Đã tắt context-mode.','ok'); await refreshState() }
   catch(x){ toast(x.message,'err'); e.target.checked=!want }
 });
-$('#btnCfg').onclick = ()=>{cfg=loadCfg(); renderCfg(); renderShare(); $('#cmToggle').checked = !!state?.project?.contextMode; $('#cfgProj').textContent = '· '+($('#projSel').selectedOptions[0]?.textContent||''); $('#dlgCfg').showModal()};
+$('#btnCfg').onclick = ()=>{cfg=loadCfg(); $('#vmTerm').hidden = isOffice(); setViewMode(isOffice() ? 'chat' : cfg.mode); renderShare(); $('#cmToggle').checked = !!state?.project?.contextMode; $('#cfgProj').textContent = '· '+($('#projSel').selectedOptions[0]?.textContent||''); $('#dlgCfg').showModal()};
 $('#cfgClose').onclick = ()=>$('#dlgCfg').close();
 $('#cfgAdd').onclick = ()=>{cfg = readCfgForm(); const w={agent:'codex',model:'',effort:''}; w.name = resolveNames([...cfg.workers, w]).pop(); cfg.workers.push(w); renderCfg()};
-$('#dlgCfg').addEventListener('click',e=>{const b=e.target.closest('.rm'); if(!b) return; cfg=readCfgForm(); cfg.workers.splice(+b.closest('.arow').dataset.i,1); renderCfg()});
-$('#dlgCfg').addEventListener('change',e=>{
+$('#agPlan').addEventListener('click',e=>{const b=e.target.closest('.rm'); if(!b) return; cfg=readCfgForm(); cfg.workers.splice(+b.closest('.arow').dataset.i,1); renderCfg()});
+$('#agPlan').addEventListener('change',e=>{
   const row=e.target.closest('.arow'); if(!row) return;
   if(e.target.classList.contains('ag')){ const a=readRow(row); a.model=''; a.effort=''; row.outerHTML = agentRow(a, row.dataset.i, !!row.querySelector('.rm')) }
   if(e.target.classList.contains('md')){ const c=row.querySelector('.mdc'); c.hidden = e.target.value!=='__other'; if(!c.hidden) c.focus() }
 });
-$('#cfgSave').onclick = ()=>{if(saveCfg()){$('#dlgCfg').close(); toast('Đã lưu. Áp dụng ở lần Start tiếp theo.','ok')}};
-$('#cfgSaveStart').onclick = async()=>{if(saveCfg()){$('#dlgCfg').close(); if(isRunning()){ if(!confirm('Phiên đang chạy. Dừng và Start lại với cấu hình mới?')) return; await api('POST','/api/stop').catch(()=>{}) } startAgents()}};
+$('#cfgSave').onclick = ()=>{if(saveCfg()){renderCfg(); toast('Đã lưu. Áp dụng ở lần Start tiếp theo.','ok')}};
+$('#cfgSaveStart').onclick = async()=>{if(saveCfg()){$('#dlgAgents').close(); if(isRunning()){ if(!confirm('Phiên đang chạy. Dừng và Start lại với cấu hình mới?')) return; await api('POST','/api/stop').catch(()=>{}) } startAgents()}};
 
 // ---------------------------------------------------------------- bảng task & window
 const chatOn = ()=> !!state?.chat?.active;
@@ -789,7 +795,7 @@ $('#btnHideTasks').onclick = ()=>{ localSet('layout','hidden'); applyLayout() };
 $('#btnShowTasks').onclick = ()=>{ localSet('layout','shown'); applyLayout() };
 applyLayout();
 
-// agent xin tạo agent cấp dưới: dòng nhắc phía trên chat, duyệt trong mục "🌳 Agents"
+// agent xin tạo agent cấp dưới: dòng nhắc phía trên chat, duyệt trong tab "🤖 Đội agent"
 function reqCards(){
   return (state?.requests || []).map(r=>`<div class="req"><div>🧩 <b>${esc(r.parent)}</b>${r.parentInfo?` <span class="hint">(${esc(r.parentInfo)})</span>`:''} xin tạo agent cấp dưới <b>${esc(r.name)}</b>: ${esc(r.agent)}${r.model?', model '+esc(r.model):', model mặc định'}${r.effort?', effort '+esc(r.effort):''}</div>
     ${r.reason?`<div class="hint">Lý do: ${esc(r.reason)}</div>`:''}${r.problem?`<div class="hint" style="color:var(--blocked)">Không tạo được: ${esc(r.problem)}</div>`:''}
@@ -848,11 +854,16 @@ function agRowHtml(a, all){
 function renderAgents(){
   if(!state) return;
   const all = agentTree();
-  $('#agTree').innerHTML = all.length ? all.map(a=>agRowHtml(a, all)).join('') : '<span class="hint">Chưa có agent nào đang chạy. Bấm Start agents trước.</span>';
+  $('#agTree').innerHTML = all.map(a=>agRowHtml(a, all)).join(''); $('#agTree').hidden = !all.length;
   $('#agAddBox').hidden = !chatOn();
+  // kiểu Chat đang chạy: sửa trực tiếp trên cây. Chưa Start (hoặc kiểu Terminal): bảng cho lần Start tiếp theo.
+  $('#agPlan').hidden = chatOn(); $('#agPlanH').hidden = !all.length;
+  $('#agIntro').textContent = chatOn() ? 'Đội đang chạy. Thay đổi ở đây có hiệu lực ngay và được nhớ cho lần Start sau.'
+    : all.length ? 'Đội đang chạy ở kiểu Terminal: ở trên chỉ đổi được cấp trên, phần còn lại áp dụng khi Start lại.'
+    : 'Chọn Lead và các worker rồi bấm "Lưu & Start".';
   $('#agHint').textContent = !all.length ? '' : chatOn()
     ? (isOffice() ? 'Agent "git" là agent duy nhất chạy git (commit, pull, merge, push) trong các thư mục tài nguyên; Lead giao việc lưu và đẩy code cho nó, còn push thì bạn bấm "Cho phép". Muốn đổi sang Codex thì không nên: Codex bị chặn ghi vào .git. ' : '') + 'Kéo thả một agent vào agent khác (hoặc chọn ở ô "dưới …") để đổi cấp trên. Agent chỉ nhận việc từ cấp trên trực tiếp của nó, còn việc bạn tự giao thì agent nào cũng nhận. Xoá agent: cấp dưới của nó chuyển lên cấp trên, task nó đang giữ trở về Todo, thư mục làm việc và code của nó được giữ lại.'
-    : 'Ở kiểu Terminal chỉ đổi được cấp trên. Muốn thêm, đổi tên, đổi model hoặc xoá agent thì dùng "Chọn agent & model" rồi Start lại, hoặc chuyển sang kiểu Chat.';
+    : 'Kéo thả một agent vào agent khác (hoặc chọn ở ô "dưới …") để đổi cấp trên.';
   const ps = $('#aaParent'), cur = ps.value;
   ps.innerHTML = all.map(a=>`<option value="${esc(a.name)}"${a.name===cur?' selected':''}>${esc(agLabel(a.name))}</option>`).join('');
 }
@@ -862,7 +873,7 @@ function fillAddForm(){
   $('#aaModels').innerHTML = (catalog[ag]?.models||[]).map(m=>`<option value="${esc(m)}">`).join('');
   $('#aaEffort').innerHTML = effOpts(ag, ''); $('#aaEffort').disabled = !(catalog[ag]?.efforts||[]).length;
 }
-function openAgents(){ agEditing=''; fillAddForm(); renderAgents(); renderReqs(); if(!$('#dlgAgents').open) $('#dlgAgents').showModal() }
+function openAgents(){ agEditing=''; cfg=loadCfg(); renderCfg(); $('#agProj').textContent = '· '+($('#projSel').selectedOptions[0]?.textContent||''); fillAddForm(); renderAgents(); renderReqs(); if(!$('#dlgAgents').open) $('#dlgAgents').showModal() }
 $('#btnAgents').onclick = openAgents;
 $('#agClose').onclick = ()=>$('#dlgAgents').close();
 $('#aaAgent').onchange = ()=>{ $('#aaModel').value=''; fillAddForm() };
@@ -918,6 +929,8 @@ $('#aaAdd').onclick = async()=>{
   $('#aaAdd').disabled = true;
   try{
     await api('POST','/api/agents',{name, agent:$('#aaAgent').value, model:$('#aaModel').value.trim(), effort:$('#aaEffort').value, parent:$('#aaParent').value||'lead'});
+    const nw = {name, agent:$('#aaAgent').value, model:$('#aaModel').value.trim(), effort:$('#aaEffort').value};
+    syncCfg(c=>{ if(!c.workers.some(w=>w.name===name)) c.workers.push(nw) });
     $('#aaName').value=''; $('#aaModel').value=''; toast('Đã thêm agent '+name,'ok');
   }catch(x){ toast(x.message,'err') }
   $('#aaAdd').disabled = false; await refreshState(); renderAgents();
@@ -984,7 +997,7 @@ function notifyAgents(){
     else if(n==='lead' && o.busy && !a.busy) alertUser('Lead đã trả lời', state.project?.name||'');
   }
   const fresh = now.reqs.filter(id=>!old.reqs.includes(id));
-  if(fresh.length) alertUser('Có yêu cầu tạo agent mới', 'Mở mục 🌳 Agents để duyệt.');
+  if(fresh.length) alertUser('Có yêu cầu tạo agent mới', 'Mở Cài đặt, tab 🤖 Đội agent để duyệt.');
 }
 
 const NOCAT = '(chưa phân nhóm)';
@@ -1072,7 +1085,7 @@ for(const id of Object.keys(PANES)){
   d.addEventListener('close', ()=>setTimeout(()=>{ if($('#dlgSet').open && !Object.keys(PANES).some(o=>$('#'+o).open)) $('#dlgSet').close() }, 0));
 }
 $('#dlgSet').addEventListener('close', e=>{ if(e.target===$('#dlgSet')) for(const o of Object.keys(PANES)) if($('#'+o).open) $('#'+o).close() });
-$('#btnSettings').onclick = ()=>{ const b = PANES[localGet('setTab')] || 'btnCfg'; $('#'+b).click() };
+$('#btnSettings').onclick = ()=>{ const b = PANES[localGet('setTab')] || 'btnAgents'; $('#'+b).click() };
 $('#setClose').onclick = ()=>$('#dlgSet').close();
 $('#btnSys').onclick = ()=>$('#dlgSys').showModal();
 
@@ -1235,7 +1248,7 @@ async function refreshPane(){
   const running = isRunning();
   $('#startHint').hidden = running || !state;
   const cm = chatOn();
-  $('#term').hidden = cm; $('#chatlog').hidden = !cm; $('#keys').hidden = cm; $('#chatKeys').hidden = !cm; $('#advTerm').hidden = cm;
+  $('#term').hidden = cm; $('#chatlog').hidden = !cm; $('#keys').hidden = cm; $('#chatKeys').hidden = !cm; $('#advTerm').hidden = cm || !state?.running;
   if(cm) return refreshChat();
   if(!running){$('#term').textContent=''; $('#quick').hidden=true; renderStatus([]); return}
   try{
@@ -1319,11 +1332,11 @@ function msgHtml(m){
 }
 // Lỗi của agent: câu giải thích dễ hiểu và nút xử lý; dòng lỗi gốc nằm trong "Chi tiết"
 const ERR_KINDS = [
-  [/usage limit|rate limit|quota|limit reached|overloaded|429|too many requests|hết hạn mức/i, 'Tài khoản của agent này đã hết hạn mức hoặc đang bị giới hạn tạm thời.', 'Chờ hạn mức hồi lại, hoặc đổi agent sang tài khoản khác (bộ nhớ sẽ được giữ).', ['btnAgents','🌳 Đổi tài khoản cho agent']],
+  [/usage limit|rate limit|quota|limit reached|overloaded|429|too many requests|hết hạn mức/i, 'Tài khoản của agent này đã hết hạn mức hoặc đang bị giới hạn tạm thời.', 'Chờ hạn mức hồi lại, hoặc đổi agent sang tài khoản khác (bộ nhớ sẽ được giữ).', ['btnAgents','🤖 Đổi tài khoản cho agent']],
   [/not logged in|log ?in|unauthori[sz]ed|authenticat|401|api key|credential|invalid token|expired/i, 'Agent chưa đăng nhập, hoặc phiên đăng nhập đã hết hạn.', 'Mở tab Tài khoản và chạy lại lệnh đăng nhập của hồ sơ đang dùng.', ['btnAcc','👤 Mở Tài khoản']],
   [/Không tìm thấy lệnh|ENOENT|command not found/i, 'Chưa cài công cụ của agent này trong WSL.', 'Cài Claude Code, Codex hoặc Gemini CLI trong WSL rồi thử lại.', null],
   [/ECONN|ENOTFOUND|EAI_AGAIN|network|timed? ?out|socket hang up|fetch failed/i, 'Agent không kết nối được mạng.', 'Kiểm tra mạng rồi nhắn lại để agent làm tiếp.', null],
-  [/model.*(not found|not exist|invalid|unsupported)|unknown model|invalid model/i, 'Model đang chọn cho agent này không dùng được.', 'Chọn model khác cho agent.', ['btnAgents','🌳 Đổi model']],
+  [/model.*(not found|not exist|invalid|unsupported)|unknown model|invalid model/i, 'Model đang chọn cho agent này không dùng được.', 'Chọn model khác cho agent.', ['btnAgents','🤖 Đổi model']],
   [/context.*(length|window|too long)|prompt is too long|maximum context/i, 'Cuộc trò chuyện với agent đã quá dài.', 'Bấm "🆕 Cuộc trò chuyện mới" ở đầu khung chat; agent sẽ đọc lại ghi chú và làm tiếp.', null],
 ];
 function errHtml(m){
@@ -1554,7 +1567,7 @@ function renderAcc(){
     return `<div class="box" data-id="${esc(a.id)}"><div class="row"><b>${esc(a.name)}</b><span class="pill">${a.agent==='claude'?'Claude Code':'Codex'}</span>
       ${a.loggedIn?'<span class="pill"><span class="dot on"></span>đã đăng nhập</span>':'<span class="pill wait"><span class="dot"></span>chưa đăng nhập</span>'}<span class="spacer"></span><button class="small danger accDel">Xoá</button></div>
       ${a.loggedIn?`<details><summary>Đăng nhập lại hoặc đổi sang tài khoản khác</summary>${cmd}</details>`:cmd}
-      <div class="hint">Đang dùng bởi: ${used.length?esc(used.join(', ')):'chưa agent nào (chọn ở 🌳 Agents)'}</div></div>`;
+      <div class="hint">Đang dùng bởi: ${used.length?esc(used.join(', ')):'chưa agent nào (chọn ở tab 🤖 Đội agent)'}</div></div>`;
   }).join('') : '<span class="hint">Chưa có hồ sơ nào. Tạo ở ô bên dưới.</span>';
 }
 $('#btnAcc').onclick = ()=>{ if(!$('#dlgAcc').open) $('#dlgAcc').showModal(); renderAcc() };
