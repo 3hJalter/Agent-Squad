@@ -111,8 +111,10 @@ code{font:12px ui-monospace,Consolas,monospace}
 .tag{font-size:11px;border:1px solid var(--done);color:var(--done);border-radius:99px;padding:0 6px;margin-left:auto}
 .termwrap{position:relative;flex:1;display:flex;min-height:200px}
 .termwrap .term{flex:1}
-.starthint{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;background:var(--term);color:var(--term-text);text-align:center;padding:16px}
-.starthint button{font-size:16px;padding:10px 22px}
+.starthint{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;background:var(--bg);color:var(--text);text-align:center;padding:16px}
+.starthint button{font-size:14px;padding:8px 16px}
+.shteam{display:flex;gap:6px;flex-wrap:wrap;justify-content:center;max-width:620px}
+.shteam span{border:1px solid var(--line);border-radius:99px;padding:3px 10px;font-size:12px;background:var(--panel)}
 .quick{display:flex;gap:6px;flex-wrap:wrap;align-items:center;padding:8px;border-top:1px solid var(--line);background:color-mix(in srgb,var(--accent) 10%,var(--panel))}
 .quick b{font-size:13px}
 .quick button{font-size:13px}
@@ -277,7 +279,12 @@ dialog.pane>.dlg-h>button[id$="Close"]{display:none}
     <div class="termwrap">
       <pre class="term" id="term"></pre>
       <div class="chatlog" id="chatlog" hidden></div>
-      <div id="startHint" class="starthint" hidden><p>Các agent của project này chưa chạy.</p><button id="btnStart2" class="primary">▶ Start agents</button><p class="hint">Muốn đổi agent, model hoặc kiểu hiển thị (chat / terminal) thì vào "⚙ Cài đặt" trước.</p></div>
+      <div id="startHint" class="starthint" hidden>
+        <h3 style="margin:0;font-size:20px">👋 Bắt đầu thôi</h3>
+        <p id="shLead" style="margin:0;max-width:520px"></p>
+        <div class="shteam" id="shTeam"></div>
+        <div class="row" style="justify-content:center"><button id="btnStart2">▶ Chỉ Start, chưa nhắn gì</button><button id="shEdit">🤖 Đổi đội agent</button></div>
+      </div>
     </div>
     <div class="quick" id="quick" hidden></div>
     <div class="suggest" id="suggest"></div>
@@ -1246,7 +1253,7 @@ $('#quick').addEventListener('click',async e=>{const b=e.target.closest('[data-k
 
 async function refreshPane(){
   const running = isRunning();
-  $('#startHint').hidden = running || !state;
+  $('#startHint').hidden = running || !state; if(!running && state) renderStartHint();
   const cm = chatOn();
   $('#term').hidden = cm; $('#chatlog').hidden = !cm; $('#keys').hidden = cm; $('#chatKeys').hidden = !cm; $('#advTerm').hidden = cm || !state?.running;
   if(cm) return refreshChat();
@@ -1261,6 +1268,18 @@ async function refreshPane(){
   }catch(e){$('#term').textContent=e.message}
 }
 $('#btnStart2').onclick = ()=>startAgents();
+$('#shEdit').onclick = ()=>openAgents();
+// Màn hình khi chưa Start: đội sẽ chạy là ai, và nhắn luôn việc cần làm là đủ
+const autoStart = ()=> cfg.mode!=='terminal' || isOffice();
+function renderStartHint(){
+  const who = (a)=> (catalog[a.agent]?.label || a.agent) + (a.model ? ' · '+a.model : '');
+  const names = resolveNames(cfg.workers);
+  $('#shTeam').innerHTML = `<span>👑 Lead: ${esc(who(cfg.lead))}</span>` + cfg.workers.map((w,i)=>`<span>🛠 ${esc(names[i])}: ${esc(who(w))}</span>`).join('');
+  $('#shLead').textContent = autoStart()
+    ? 'Gõ việc bạn cần vào ô bên dưới rồi bấm Gửi. Đội agent tự khởi động và Lead nhận việc ngay.'
+    : 'Project này đang đặt kiểu Terminal. Bấm Start để mở màn hình terminal của từng agent.';
+  $('#btnStart2').textContent = autoStart() ? '▶ Chỉ Start, chưa nhắn gì' : '▶ Start agents';
+}
 
 // ---------------------------------------------------------------- chế độ chat
 function md(src){
@@ -1469,7 +1488,10 @@ async function sendTo(target, text, files=[]){
 }
 async function sendMsg(){
   const text = $('#msg').value; if(!text.trim() && !attachments.length) return;
-  if(!isRunning()){toast('Bấm Start agents trước đã.','err'); return}
+  if(!isRunning()){
+    if(!autoStart()){toast('Bấm Start agents trước đã.','err'); return}
+    await startAgents(); if(!chatOn()) return;   // Start lỗi thì giữ nguyên nội dung đang gõ
+  }
   try{await sendTo(win, text.trim(), attachments); $('#msg').value=''; attachments=[]; renderChips(); setTimeout(refreshPane,300)}catch(e){toast(e.message,'err')}
 }
 
