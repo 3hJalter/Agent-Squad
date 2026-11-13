@@ -172,7 +172,8 @@ a.btn:hover{border-color:var(--accent)}
 .bar{height:6px;border-radius:3px;background:var(--line);overflow:hidden}
 .bar i{display:block;height:100%;background:var(--accent)}
 .bar.claude i{background:#d97757}.bar.codex i{background:#10a37f}.bar.gemini i{background:#4c8df6}
-.utable{display:grid;grid-template-columns:minmax(80px,1.1fr) minmax(110px,1.6fr) 44px 70px 70px 70px 72px minmax(90px,1fr);gap:6px 10px;align-items:center;font-size:13px}
+.rawuse{margin:4px 0 0;padding:8px 10px;background:var(--term);color:var(--term-text);border-radius:6px;font:11.5px/1.4 ui-monospace,Consolas,monospace;white-space:pre-wrap;word-break:break-word;max-height:220px;overflow:auto}
+.utable{display:grid;grid-template-columns:minmax(70px,1fr) minmax(110px,1.6fr) 40px 62px 62px 62px 68px 68px minmax(90px,1fr);gap:6px 10px;align-items:center;font-size:13px}
 .utable .h{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em}
 .utable .r{text-align:right;font-variant-numeric:tabular-nums}
 .tab .busy{display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--prog);margin-left:6px;animation:bl 1.2s infinite}
@@ -487,7 +488,7 @@ dialog.pane>.dlg-h>button[id$="Close"]{display:none}
     <span class="seg" id="uRange"><button data-r="today">Hôm nay</button><button data-r="7">7 ngày</button><button data-r="all">Tất cả</button></span>
     <button id="uClose" class="small">Đóng</button></div>
   <div class="dlg-b"><div id="uBody"></div>
-    <p class="hint" style="margin:0">Chỉ tính các lượt agent chạy ở kiểu Chat của project này. "Vào" là token agent đọc (gồm cả phần lấy lại từ bộ nhớ đệm), "Ra" là token agent viết. Số do chính Claude, Codex, Gemini báo về sau mỗi lượt.</p></div>
+    <p class="hint" style="margin:0">Số do chính Claude, Codex, Gemini báo về sau mỗi lượt, gồm cả lúc agent đọc file, chạy lệnh và suy nghĩ. "Quy đổi" = Mới + Đệm/10 + Trả lời, vì token đọc lại từ bộ nhớ đệm rẻ hơn khoảng 10 lần; tỉ lệ % tính theo cột này. Chỉ tính các lượt chạy qua dashboard ở kiểu Chat của project này, không biết hạn mức còn lại của gói bạn đang dùng. Với Claude, lượt bị dừng giữa chừng vẫn được cộng phần đã dùng.</p></div>
 </dialog>
 
 <div id="toasts"></div>
@@ -877,20 +878,25 @@ $('#aaAdd').onclick = async()=>{
 // ---------------------------------------------------------------- thống kê token
 let usageRange = localGet('usageRange') || 'all';
 const fmtTok = (n)=> n>=1e6 ? (n/1e6).toFixed(2).replace(/\.?0+$/,'')+'M' : n>=1e4 ? (n/1e3).toFixed(1).replace(/\.0$/,'')+'k' : String(Math.round(n)).replace(/\B(?=(\d{3})+$)/g,'.');
+const usageEq = (u)=> Math.max(0, u.in-(u.cached||0)) + (u.cached||0)/10 + u.out;
 const pct = (a,b)=> b ? (a/b*100).toFixed(a/b<0.1&&a?1:0)+'%' : '0%';
 async function renderUsage(){
   document.querySelectorAll('#uRange button').forEach(b=>b.classList.toggle('sel', b.dataset.r===usageRange));
   let j; try{ j = await api('GET','/api/usage?range='+usageRange) }catch(e){ $('#uBody').innerHTML = `<span class="hint">${esc(e.message)}</span>`; return }
-  const rows = j.rows.map(r=>({...r, total:r.in+r.out})), total = rows.reduce((s,r)=>s+r.total,0), cost = rows.reduce((s,r)=>s+(r.cost||0),0);
-  if(!total){ $('#uBody').innerHTML = '<span class="hint">Chưa có số liệu trong khoảng này. Số liệu được ghi sau mỗi lượt agent trả lời ở kiểu Chat.</span>'; return }
+  // "quy đổi": token đọc lại từ bộ nhớ đệm chỉ tính 1/10, vì hãng tính tiền phần đó rẻ hơn khoảng 10 lần
+  const rows = j.rows.map(r=>{ const fresh = Math.max(0, r.in-(r.cached||0)); return {...r, fresh, raw:r.in+r.out, total:usageEq(r)} }).sort((x,y)=>y.total-x.total);
+  const total = rows.reduce((s,r)=>s+r.total,0), rawTotal = rows.reduce((s,r)=>s+r.raw,0), cost = rows.reduce((s,r)=>s+(r.cost||0),0), cut = rows.reduce((s,r)=>s+(r.partial||0),0);
+  if(!rawTotal){ $('#uBody').innerHTML = '<span class="hint">Chưa có số liệu trong khoảng này. Số liệu được ghi sau mỗi lượt agent trả lời ở kiểu Chat.</span>'; return }
   const prov = AGENTS.map(a=>{ const rs = rows.filter(r=>r.agent===a); return {a, total:rs.reduce((s,r)=>s+r.total,0), cost:rs.reduce((s,r)=>s+(r.cost||0),0), turns:rs.reduce((s,r)=>s+r.turns,0)} });
+  const last = Object.entries(j.last||{});
   $('#uBody').innerHTML = `<div style="display:grid;gap:12px">
-    <div>Tổng cộng <b title="${total} token">${fmtTok(total)}</b> token${cost?` · ước tính <b>$${cost.toFixed(2)}</b> (chỉ Claude báo chi phí)`:''}${j.since&&usageRange==='all'?` <span class="hint">· từ ${esc(j.since)}</span>`:''}</div>
-    <div class="utot">${prov.map(p=>`<div class="ucard"><span class="hint">${esc(catalog[p.a]?.label||p.a)}</span><span class="big" title="${p.total} token">${fmtTok(p.total)} <span class="hint" style="font-weight:400">${pct(p.total,total)}</span></span>
+    <div>Quy đổi <b title="${Math.round(total)} token">${fmtTok(total)}</b> token <span class="hint">(số thô ${fmtTok(rawTotal)}, phần lớn là đọc lại từ bộ nhớ đệm)</span>${cost?` · chi phí Claude báo <b>$${cost.toFixed(2)}</b>`:''}${cut?` <span class="hint">· ${cut} lượt bị dừng giữa chừng, số ước tính</span>`:''}${j.since&&usageRange==='all'?` <span class="hint">· từ ${esc(j.since)}</span>`:''}</div>
+    <div class="utot">${prov.map(p=>`<div class="ucard"><span class="hint">${esc(catalog[p.a]?.label||p.a)}</span><span class="big" title="${Math.round(p.total)} token quy đổi">${fmtTok(p.total)} <span class="hint" style="font-weight:400">${pct(p.total,total)}</span></span>
       <div class="bar ${p.a}"><i style="width:${total?p.total/total*100:0}%"></i></div><span class="hint">${p.turns} lượt${p.cost?' · $'+p.cost.toFixed(2):''}</span></div>`).join('')}</div>
-    <div class="utable"><span class="h">Agent</span><span class="h">Hãng · model</span><span class="h r">Lượt</span><span class="h r">Vào</span><span class="h r">Ra</span><span class="h r">Tổng</span><span class="h r" title="Trung bình token mỗi lượt (vào + ra)">TB/lượt</span><span class="h">% tổng</span>
-      ${rows.map(r=>`<b>${esc(agLabel(r.name))}</b><span class="hint">${esc(r.agent)}${r.model?' · '+esc(r.model):' · mặc định'}${r.cm?' · <b title="Lượt chạy có context-mode">⚡ context-mode</b>':''}${r.account?' · 👤 '+esc(r.accountName):''}</span><span class="r">${r.turns}</span><span class="r" title="${r.in} token, trong đó ${r.cached||0} lấy từ bộ nhớ đệm">${fmtTok(r.in)}</span><span class="r" title="${r.out} token">${fmtTok(r.out)}</span><span class="r" title="${r.total} token"><b>${fmtTok(r.total)}</b></span><span class="r" title="${r.turns?Math.round(r.total/r.turns):0} token mỗi lượt">${r.turns?fmtTok(r.total/r.turns):'-'}</span>
-        <span class="row" style="gap:6px;flex-wrap:nowrap"><span class="bar ${esc(r.agent)}" style="flex:1"><i style="width:${r.total/total*100}%"></i></span><span style="width:42px;text-align:right">${pct(r.total,total)}</span></span>`).join('')}</div></div>`;
+    <div class="utable"><span class="h">Agent</span><span class="h">Hãng · model</span><span class="h r">Lượt</span><span class="h r" title="Token agent đọc lần đầu (tính đủ)">Mới</span><span class="h r" title="Token đọc lại từ bộ nhớ đệm (rẻ hơn khoảng 10 lần)">Đệm</span><span class="h r" title="Token agent viết ra, gồm cả phần suy nghĩ">Trả lời</span><span class="h r" title="Mới + Đệm/10 + Trả lời">Quy đổi</span><span class="h r" title="Trung bình token quy đổi mỗi lượt">TB/lượt</span><span class="h">% tổng</span>
+      ${rows.map(r=>`<b>${esc(agLabel(r.name))}</b><span class="hint">${esc(r.agent)}${r.model?' · '+esc(r.model):' · mặc định'}${r.cm?' · <b title="Lượt chạy có context-mode">⚡ context-mode</b>':''}${r.account?' · 👤 '+esc(r.accountName):''}</span><span class="r">${r.turns||'-'}</span><span class="r" title="${r.fresh} token">${fmtTok(r.fresh)}</span><span class="r" title="${r.cached||0} token">${fmtTok(r.cached||0)}</span><span class="r" title="${r.out} token">${fmtTok(r.out)}</span><span class="r" title="${Math.round(r.total)} token quy đổi${r.cost?' · $'+r.cost.toFixed(2):''}"><b>${fmtTok(r.total)}</b></span><span class="r">${r.turns?fmtTok(r.total/r.turns):'-'}</span>
+        <span class="row" style="gap:6px;flex-wrap:nowrap"><span class="bar ${esc(r.agent)}" style="flex:1"><i style="width:${total?r.total/total*100:0}%"></i></span><span style="width:42px;text-align:right">${pct(r.total,total)}</span></span>`).join('')}</div>
+    ${last.length?`<details><summary>Xem số liệu gốc của lượt gần nhất (để đối chiếu)</summary><div style="display:grid;gap:8px;margin-top:8px">${last.map(([n,l])=>`<div><b>${esc(agLabel(n))}</b> <span class="hint">${esc(l.agent)} · ${esc(new Date(l.ts).toLocaleString())}</span><pre class="rawuse">${esc(l.raw)}</pre></div>`).join('')}</div></details>`:''}</div>`;
 }
 $('#btnUsage').onclick = ()=>{ $('#uBody').innerHTML=''; $('#dlgUsage').showModal(); renderUsage() };
 $('#uClose').onclick = ()=>$('#dlgUsage').close();
@@ -1231,7 +1237,7 @@ function msgHtml(m){
   if(m.role==='you') return `<div class="msg you" title="${esc(time)}">${esc(m.text)}${filesHtml(m)}</div>`;
   if(m.role==='system') return `<div class="msg system">${esc(m.text)} · ${esc(time)}</div>`;
   const who = (win==='lead'?'👑 Lead':'🛠 '+win) + (m.agent?' · '+m.agent:'') + ' · ' + time;
-  return `<div class="msg agent"><div class="who" title="${m.usage?esc(fmtTok(m.usage.in+m.usage.out)+' token trong lượt này'):''}">${esc(who)}</div>${stepsHtml(m)}${m.text?md(m.text):''}${m.running&&!m.text?'<span class="typing"><i></i><i></i><i></i></span>':''}${filesHtml(m)}${m.error?`<div class="errbox">⚠️ ${esc(m.error)}</div>`:''}${grantHtml(m)}${m.note?`<div class="hint">${esc(m.note)}</div>`:''}</div>`;
+  return `<div class="msg agent"><div class="who" title="${m.usage?esc(`Lượt này: ${fmtTok(usageEq(m.usage))} token quy đổi (mới ${fmtTok(Math.max(0,m.usage.in-(m.usage.cached||0)))}, đọc lại từ bộ nhớ đệm ${fmtTok(m.usage.cached||0)}, trả lời ${fmtTok(m.usage.out)})`+(m.usage.cost?` · $${m.usage.cost.toFixed(3)}`:'')+(m.usage.partial?' · lượt bị dừng, số ước tính':'')):''}">${esc(who)}</div>${stepsHtml(m)}${m.text?md(m.text):''}${m.running&&!m.text?'<span class="typing"><i></i><i></i><i></i></span>':''}${filesHtml(m)}${m.error?`<div class="errbox">⚠️ ${esc(m.error)}</div>`:''}${grantHtml(m)}${m.note?`<div class="hint">${esc(m.note)}</div>`:''}</div>`;
 }
 function grantHtml(m){
   if(!m.grants?.length || m.running) return '';
