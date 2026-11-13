@@ -59,7 +59,8 @@ section>h2{font-size:14px;margin:0;padding:10px 12px;border-bottom:1px solid var
 .cat>summary{font-size:12px;color:var(--muted);cursor:pointer;margin-bottom:5px;list-style:none;user-select:none}
 .cat>summary::before{content:'▾ '}
 .cat:not([open])>summary::before{content:'▸ '}
-#catSel{font-size:12px;padding:2px 4px}
+#catSel,#taskFilter{font-size:12px;padding:2px 4px}
+#secTasks>h2{flex-wrap:wrap;row-gap:6px}
 .s-in-progress,.s-ready{border-left-color:var(--prog)}.s-blocked{border-left-color:var(--blocked)}.s-done{border-left-color:var(--done)}
 .empty{color:var(--muted);font-size:12px}
 .tabs{display:flex;gap:4px;flex-wrap:wrap}
@@ -137,7 +138,8 @@ details.adv summary{padding:4px 10px 8px;font-size:12px;color:var(--muted);curso
 .steps li{display:grid;grid-template-columns:20px minmax(0,1fr);gap:4px}
 .steps li.err{color:var(--blocked)}
 .steps li pre{grid-column:2;margin:2px 0;font-size:11px;max-height:140px}
-.msg .errbox{margin-top:6px;padding:6px 8px;border-left:3px solid var(--blocked);background:color-mix(in srgb,var(--blocked) 8%,transparent);font-size:12.5px;white-space:pre-wrap}
+.msg .errbox pre{margin:4px 0 0;font-size:11px}
+.msg .errbox{margin-top:6px;border-radius:0 8px 8px 0;padding:6px 8px;border-left:3px solid var(--blocked);background:color-mix(in srgb,var(--blocked) 8%,transparent);font-size:12.5px;white-space:pre-wrap}
 .typing{display:inline-flex;gap:4px;padding:4px 0}.typing i{width:6px;height:6px;border-radius:50%;background:var(--muted);animation:bl 1.2s infinite}
 .typing i:nth-child(2){animation-delay:.2s}.typing i:nth-child(3){animation-delay:.4s}
 @keyframes bl{0%,80%,100%{opacity:.25}40%{opacity:1}}
@@ -270,7 +272,7 @@ dialog.pane>.dlg-h>button[id$="Close"]{display:none}
 
 <main>
   <section>
-    <h2><span id="chatTitle"></span><span class="hint" id="chatSub"></span><span class="spacer"></span><button id="btnShowTasks" class="small" hidden title="Hiện lại khung task">📋 Tasks<span class="n" id="taskCount"></span></button><span id="agentStatus" class="pill"></span><button id="btnClearChat" class="small" title="Xoá nội dung chat của agent đang chọn">🗑 Xoá chat</button></h2>
+    <h2><span id="chatTitle"></span><span class="hint" id="chatSub"></span><span class="spacer"></span><button id="btnShowTasks" class="small" hidden title="Hiện lại khung task">📋 Tasks<span class="n" id="taskCount"></span></button><span id="agentStatus" class="pill"></span><button id="btnClearChat" class="small" title="Bắt đầu cuộc trò chuyện mới với agent đang chọn">🆕 Cuộc trò chuyện mới</button></h2>
     <div class="reqs" id="reqs" hidden></div>
     <div class="termwrap">
       <pre class="term" id="term"></pre>
@@ -287,17 +289,15 @@ dialog.pane>.dlg-h>button[id$="Close"]{display:none}
       <button id="btnSend" class="primary">Gửi</button>
     </div>
     <div class="chips" id="chips"></div>
-    <details class="adv"><summary>Nâng cao</summary>
-      <div class="keys" id="chatKeys"><button class="small" id="btnTurnStop">⏹ Dừng lượt đang chạy</button><button class="small" id="btnReset">🆕 Cuộc trò chuyện mới với agent này</button><button class="small" id="btnRevoke" hidden>🔒 Thu hồi quyền đã cấp</button><span class="hint" id="grantList" style="align-self:center"></span></div>
+    <details class="adv" id="advTerm" hidden><summary>Phím điều khiển terminal</summary>
       <div class="keys" id="keys"></div>
-      <div class="row" style="padding:0 8px 8px"><label class="hint"><input type="checkbox" id="follow" checked> tự cuộn xuống cuối</label>
-        <label class="hint"><input type="checkbox" id="showWatch"> hiện cửa sổ "watch" (nhật ký giao việc)</label></div>
     </details>
+    <div hidden><div id="chatKeys"><button id="btnTurnStop"></button><button id="btnReset"></button><button id="btnRevoke" hidden></button><span id="grantList"></span></div></div>
     <input type="file" id="fileInput" multiple hidden>
   </section>
   <div id="split" title="Kéo để đổi độ rộng khung task và chat. Bấm đúp để về mặc định."></div>
   <section id="secTasks">
-    <h2>Tasks <button id="btnHideTasks" class="small" title="Ẩn khung task để chat rộng hơn">✕</button><select id="catSel" hidden title="Lọc theo nhóm (Category)"></select><span class="spacer"></span><button id="btnCleanup" class="small" hidden title="Chuyển các task đã xong vào thư mục lưu trữ">🧹 Dọn</button><button id="btnNew" class="primary small">+ Việc mới</button></h2>
+    <h2>Tasks <button id="btnHideTasks" class="small" title="Ẩn khung task để chat rộng hơn">✕</button><select id="taskFilter" title="Lọc task theo trạng thái"><option value="open">Đang mở</option><option value="all">Tất cả</option><option value="blocked">Bị chặn</option><option value="done">Đã xong</option></select><select id="catSel" hidden title="Lọc theo nhóm (Category)"></select><span class="spacer"></span><button id="btnCleanup" class="small" hidden title="Chuyển các task đã xong vào thư mục lưu trữ">🧹 Dọn</button><button id="btnNew" class="primary small">+ Việc mới</button></h2>
     <div class="board" id="board"></div>
   </section>
   <section id="secFile" hidden>
@@ -354,6 +354,8 @@ dialog.pane>.dlg-h>button[id$="Close"]{display:none}
   <div class="dlg-h"><h3>🖥 Hệ thống</h3></div>
   <div class="dlg-b setlist">
     <div class="setrow"><button id="btnNotify"></button><span class="hint">Báo bằng tiếng và thông báo trình duyệt khi agent xong, bị chặn hoặc cần bạn.</span></div>
+    <div class="setrow"><label style="color:var(--text);display:flex;gap:6px;align-items:center"><input type="checkbox" id="follow" checked> Tự cuộn xuống cuối</label><span class="hint">Khi có tin mới, khung chat tự cuộn xuống dưới cùng.</span></div>
+    <div class="setrow"><label style="color:var(--text);display:flex;gap:6px;align-items:center"><input type="checkbox" id="showWatch"> Hiện cửa sổ "watch"</label><span class="hint">Nhật ký giao việc, chỉ có ở kiểu Terminal.</span></div>
     <div class="setrow"><button id="btnUpdate">⟳ Cập nhật</button><span class="hint">Tải bản Agent-Squad mới nhất từ GitHub và khởi động lại dashboard.</span></div>
     <div class="setrow"><button id="btnRestart">↻ Khởi động lại</button><span class="hint">Khởi động lại dashboard để dùng code mới trên máy.</span></div>
   </div>
@@ -1012,13 +1014,16 @@ function renderBoard(){
   const by = Object.fromEntries(COLS.map(([k])=>[k,[]]));
   const cat = renderCatSel();
   for(const t of state.tasks){ if(cat && catOf(t)!==cat) continue; (by[t.status] || by['todo']).push(t)}
-  const cols = COLS.filter(([k])=>k!=='ready' || by.ready.length);
-  $('#board').style.gridTemplateColumns = `repeat(${cols.length},minmax(0,1fr))`;
+  const f = $('#taskFilter').value, wide = document.querySelector('main').classList.contains('wide');
+  const cols = COLS.filter(([k])=>(k!=='ready' || by.ready.length) && (f==='all' || (f==='open' ? k!=='done' : k===f)) && (wide || by[k].length));
+  $('#board').style.gridTemplateColumns = `repeat(${cols.length||1},minmax(0,1fr))`;
   const open = state.tasks.filter(t=>t.status!=='done').length; $('#taskCount').textContent = open ? ` ${open}` : '';
   $('#board').innerHTML = cols.map(([k,label])=>`<div class="col"><h3>${label} <span>${by[k].length}</span></h3>${
     colHtml(by[k], k)
-  }</div>`).join('');
+  }</div>`).join('') || `<div class="empty" style="padding:8px">${f==='open' ? 'Không có task nào đang mở. Nhắn Lead việc bạn cần, hoặc bấm "+ Việc mới".' : 'Không có task nào ở mục này.'}</div>`;
 }
+$('#taskFilter').value = localGet('taskFilter') || 'open';
+$('#taskFilter').onchange = e=>{ localSet('taskFilter', e.target.value); if(state) renderBoard() };
 
 function winLabel(name){
   if(name==='lead') return '👑 Lead';
@@ -1192,7 +1197,7 @@ async function refreshState(){
     $('#stext').parentElement.title = state.project.path + ' · phiên tmux ' + state.session;
     renderBoard(); renderTabs(); notifyChanges(); notifyAgents(); renderBanner(); renderReqs(); renderRes(); renderAcc(); renderPerm();
     if($('#dlgAgents').open && !agEditing && !agDrag && !document.activeElement?.closest?.('#agTree')) renderAgents();
-    $('#btnCleanup').hidden = !state.tasks.some(t=>t.status==='done'); $('#btnClearChat').hidden = !isRunning();
+    $('#btnCleanup').hidden = !state.tasks.some(t=>t.status==='done'); $('#btnClearChat').hidden = !isRunning(); $('#btnClearChat').textContent = chatOn() ? '🆕 Cuộc trò chuyện mới' : '🗑 Xoá lịch sử cuộn';
   }catch(e){$('#stext').textContent='mất kết nối tới server'; $('#sdot').classList.remove('on')}
 }
 
@@ -1230,7 +1235,7 @@ async function refreshPane(){
   const running = isRunning();
   $('#startHint').hidden = running || !state;
   const cm = chatOn();
-  $('#term').hidden = cm; $('#chatlog').hidden = !cm; $('#keys').hidden = cm; $('#chatKeys').hidden = !cm;
+  $('#term').hidden = cm; $('#chatlog').hidden = !cm; $('#keys').hidden = cm; $('#chatKeys').hidden = !cm; $('#advTerm').hidden = cm;
   if(cm) return refreshChat();
   if(!running){$('#term').textContent=''; $('#quick').hidden=true; renderStatus([]); return}
   try{
@@ -1310,7 +1315,22 @@ function msgHtml(m){
   if(m.role==='you') return `<div class="msg you" title="${esc(time)}">${esc(m.text)}${filesHtml(m)}</div>`;
   if(m.role==='system') return `<div class="msg system">${esc(m.text)} · ${esc(time)}</div>`;
   const who = (win==='lead'?'👑 Lead':'🛠 '+win) + (m.agent?' · '+m.agent:'') + ' · ' + time;
-  return `<div class="msg agent"><div class="who" title="${m.usage?esc(`Lượt này: ${fmtTok(usageEq(m.usage))} token quy đổi (mới ${fmtTok(Math.max(0,m.usage.in-(m.usage.cached||0)))}, đọc lại từ bộ nhớ đệm ${fmtTok(m.usage.cached||0)}, trả lời ${fmtTok(m.usage.out)})`+(m.usage.cost?` · $${m.usage.cost.toFixed(3)}`:'')+(m.usage.partial?' · lượt bị dừng, số ước tính':'')):''}">${esc(who)}</div>${stepsHtml(m)}${m.text?md(m.text):''}${m.running&&!m.text?'<span class="typing"><i></i><i></i><i></i></span>':''}${filesHtml(m)}${m.error?`<div class="errbox">⚠️ ${esc(m.error)}</div>`:''}${grantHtml(m)}${m.note?`<div class="hint">${esc(m.note)}</div>`:''}</div>`;
+  return `<div class="msg agent"><div class="who" title="${m.usage?esc(`Lượt này: ${fmtTok(usageEq(m.usage))} token quy đổi (mới ${fmtTok(Math.max(0,m.usage.in-(m.usage.cached||0)))}, đọc lại từ bộ nhớ đệm ${fmtTok(m.usage.cached||0)}, trả lời ${fmtTok(m.usage.out)})`+(m.usage.cost?` · $${m.usage.cost.toFixed(3)}`:'')+(m.usage.partial?' · lượt bị dừng, số ước tính':'')):''}">${esc(who)}</div>${stepsHtml(m)}${m.text?md(m.text):''}${m.running&&!m.text?'<span class="typing"><i></i><i></i><i></i></span>':''}${filesHtml(m)}${errHtml(m)}${grantHtml(m)}${m.note?`<div class="hint">${esc(m.note)}</div>`:''}</div>`;
+}
+// Lỗi của agent: câu giải thích dễ hiểu và nút xử lý; dòng lỗi gốc nằm trong "Chi tiết"
+const ERR_KINDS = [
+  [/usage limit|rate limit|quota|limit reached|overloaded|429|too many requests|hết hạn mức/i, 'Tài khoản của agent này đã hết hạn mức hoặc đang bị giới hạn tạm thời.', 'Chờ hạn mức hồi lại, hoặc đổi agent sang tài khoản khác (bộ nhớ sẽ được giữ).', ['btnAgents','🌳 Đổi tài khoản cho agent']],
+  [/not logged in|log ?in|unauthori[sz]ed|authenticat|401|api key|credential|invalid token|expired/i, 'Agent chưa đăng nhập, hoặc phiên đăng nhập đã hết hạn.', 'Mở tab Tài khoản và chạy lại lệnh đăng nhập của hồ sơ đang dùng.', ['btnAcc','👤 Mở Tài khoản']],
+  [/Không tìm thấy lệnh|ENOENT|command not found/i, 'Chưa cài công cụ của agent này trong WSL.', 'Cài Claude Code, Codex hoặc Gemini CLI trong WSL rồi thử lại.', null],
+  [/ECONN|ENOTFOUND|EAI_AGAIN|network|timed? ?out|socket hang up|fetch failed/i, 'Agent không kết nối được mạng.', 'Kiểm tra mạng rồi nhắn lại để agent làm tiếp.', null],
+  [/model.*(not found|not exist|invalid|unsupported)|unknown model|invalid model/i, 'Model đang chọn cho agent này không dùng được.', 'Chọn model khác cho agent.', ['btnAgents','🌳 Đổi model']],
+  [/context.*(length|window|too long)|prompt is too long|maximum context/i, 'Cuộc trò chuyện với agent đã quá dài.', 'Bấm "🆕 Cuộc trò chuyện mới" ở đầu khung chat; agent sẽ đọc lại ghi chú và làm tiếp.', null],
+];
+function errHtml(m){
+  if(!m.error) return '';
+  const k = ERR_KINDS.find(([re])=>re.test(m.error));
+  if(!k) return `<div class="errbox">⚠️ ${esc(m.error)}</div>`;
+  return `<div class="errbox"><b>⚠️ ${esc(k[1])}</b><div>${esc(k[2])}</div>${k[3]?`<div class="row" style="margin-top:6px"><button class="small" data-open="${k[3][0]}">${esc(k[3][1])}</button></div>`:''}<details class="steps"><summary>Chi tiết lỗi</summary><pre>${esc(m.error)}</pre></details></div>`;
 }
 function grantHtml(m){
   if(!m.grants?.length || m.running) return '';
@@ -1324,6 +1344,7 @@ function grantHtml(m){
 }
 $('#chatlog').addEventListener('click',async e=>{
   const f=e.target.closest('[data-file]'); if(f){ openFile(f.dataset.file, f.dataset.name, f.dataset.kind); return }
+  const o=e.target.closest('[data-open]'); if(o){ $('#'+o.dataset.open).click(); return }
   const b=e.target.closest('[data-grant]'); if(!b) return;
   b.disabled=true;
   try{await api('POST',`/api/chat/${encodeURIComponent(win)}/grant`,{msgId:b.dataset.grant}); chatSig=''; refreshChat()}catch(x){toast(x.message,'err'); b.disabled=false}
@@ -1487,7 +1508,7 @@ $('#btnCleanup').onclick = async()=>{
 $('#btnClearChat').onclick = async()=>{
   const who = win==='lead'?'Lead':win;
   if(chatOn()){
-    if(!confirm(`Xoá chat với ${who}? Agent sẽ bắt đầu cuộc trò chuyện mới (task và code không bị ảnh hưởng).`)) return;
+    if(!confirm(`Bắt đầu cuộc trò chuyện mới với ${who}?\n\nNội dung chat hiện tại sẽ bị xoá. Agent giữ lại ghi chú tóm tắt và bộ nhớ chung của project, còn task và code không bị ảnh hưởng.`)) return;
     try{await api('POST',`/api/chat/${encodeURIComponent(win)}/reset`); chatSig=''; refreshChat()}catch(e){toast(e.message,'err')}
   } else {
     try{await api('POST',`/api/pane/${encodeURIComponent(win)}/clear`); toast('Đã xoá lịch sử cuộn của cửa sổ này (màn hình hiện tại vẫn giữ).','ok'); refreshPane()}catch(e){toast(e.message,'err')}
