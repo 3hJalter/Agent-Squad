@@ -5,10 +5,10 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Agent-Squad</title>
 <style>
-:root{--bg:#f6f7f9;--panel:#fff;--line:#dfe3e8;--text:#1d2329;--muted:#66717d;--accent:#2f6fde;--accent-text:#fff;
-  --todo:#8a94a0;--prog:#2f6fde;--blocked:#d4462f;--done:#2e9d5b;--term:#11151a;--term-text:#d6dde4}
-@media (prefers-color-scheme:dark){:root{--bg:#0f1216;--panel:#171b21;--line:#2a3039;--text:#e4e8ec;--muted:#8d97a3;
-  --accent:#5b8ef0;--term:#0a0c0f;--term-text:#cfd6dd}}
+:root{--bg:#faf9f5;--panel:#fff;--side:#f3f1ea;--line:#e3dfd3;--text:#29261f;--muted:#73706a;--accent:#c96442;--accent-text:#fff;--bubble:#efece3;
+  --todo:#9a968c;--prog:#3b78d8;--blocked:#c8452f;--done:#3a9160;--term:#1f1e1b;--term-text:#e6e2d8}
+@media (prefers-color-scheme:dark){:root{--bg:#262624;--panel:#30302e;--side:#1f1e1d;--line:#45443f;--text:#ece9e1;--muted:#a6a39a;--bubble:#3a3936;
+  --accent:#d97757;--prog:#6ea0ee;--term:#191918;--term-text:#dcd8ce}}
 *{box-sizing:border-box}
 [hidden]{display:none!important}
 body{margin:0;background:var(--bg);color:var(--text);font:14px/1.45 system-ui,-apple-system,"Segoe UI",sans-serif}
@@ -25,7 +25,7 @@ button.primary{background:var(--accent);border-color:var(--accent);color:var(--a
 button.danger{color:var(--blocked)}
 button.small{padding:2px 8px;font-size:12px}
 input,select,textarea{padding:5px 8px;border:1px solid var(--line);border-radius:6px;background:var(--bg)}
-main{display:grid;grid-template-columns:var(--taskW,330px) 14px minmax(0,1fr);gap:0;padding:14px 16px;height:calc(100vh - 54px - var(--bannerH,0px))}
+main{display:grid;grid-template-columns:minmax(0,1fr) 14px var(--taskW,330px);gap:0;padding:10px 12px 10px 0;flex:1;min-height:0}
 main.notasks{grid-template-columns:minmax(0,1fr)}
 main.notasks #secTasks,main.notasks #split{display:none}
 #split{cursor:col-resize;position:relative;touch-action:none}
@@ -43,7 +43,7 @@ main:not(.wide) .col .empty{display:none}
 .reqs{display:grid;gap:6px;padding:8px;border-bottom:1px solid var(--line);background:color-mix(in srgb,var(--prog) 8%,var(--panel))}
 .req{display:grid;gap:4px;font-size:13px}
 .req .row{gap:6px}
-@media (max-width:900px){main{grid-template-columns:1fr;height:auto;gap:14px}#split{display:none}}
+@media (max-width:900px){main{grid-template-columns:1fr;gap:14px;padding:10px}#split{display:none}}
 section{background:var(--panel);border:1px solid var(--line);border-radius:10px;display:flex;flex-direction:column;min-height:0}
 section>h2 button{white-space:nowrap}
 section>h2{font-size:14px;margin:0;padding:10px 12px;border-bottom:1px solid var(--line);display:flex;gap:8px;align-items:center}
@@ -176,43 +176,73 @@ a.btn:hover{border-color:var(--accent)}
 .utable .h{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em}
 .utable .r{text-align:right;font-variant-numeric:tabular-nums}
 .tab .busy{display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--prog);margin-left:6px;animation:bl 1.2s infinite}
+
+/* ---- bố cục kiểu app Claude: cột trái (project + agent), chat ở giữa, Tasks ở cột phải ---- */
+#app{display:grid;grid-template-columns:250px minmax(0,1fr);height:100vh}
+#side{background:var(--side);border-right:1px solid var(--line);display:flex;flex-direction:column;gap:10px;padding:12px 10px;min-height:0;overflow:auto}
+#side h1{font-size:16px;margin:0 4px}
+#side .sideproj{display:flex;gap:6px}
+#side .sideproj select{flex:1;min-width:0;background:var(--panel)}
+#side .pill{align-self:flex-start;max-width:100%}
+.sidehead{font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);margin:6px 4px -4px}
+#side .tabs{flex-direction:column;flex-wrap:nowrap;gap:2px}
+#side .tab{display:flex;align-items:center;gap:6px;width:100%;text-align:left;border:0;background:none;padding:7px 10px;border-radius:8px;font-size:13.5px;overflow:hidden;white-space:nowrap}
+#side .tab:hover{background:color-mix(in srgb,var(--line) 55%,transparent)}
+#side .tab.sel{background:var(--panel);color:var(--text);box-shadow:0 0 0 1px var(--line);font-weight:600}
+#side .tab .busy,#side .tab .need{margin-left:auto}
+.sidefoot{margin-top:auto;display:grid;gap:6px}
+.sidefoot .row{flex-wrap:nowrap}.sidefoot .row button{flex:1}
+#btnSettings{text-align:left;border:0;background:none;padding:7px 10px;border-radius:8px}
+#btnSettings:hover{background:color-mix(in srgb,var(--line) 55%,transparent)}
+#content{display:flex;flex-direction:column;min-width:0;height:100vh}
+main>section:first-child{border:0;background:none}
+main>section:first-child>h2{border:0;padding:6px 12px}
+#chatTitle{font-weight:600}
+#chatTitle+.hint{font-weight:400;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.chatlog{background:none;gap:14px;padding:14px max(14px,calc((100% - 820px)/2))}
+.msg.agent{max-width:100%;background:none;border:0;padding:2px 0;border-radius:0;align-self:stretch}
+.msg.you{background:var(--bubble);color:var(--text);border-color:transparent;border-radius:16px;border-bottom-right-radius:16px;max-width:80%}
+.suggest,.chips,.quick,details.adv{margin:0 max(14px,calc((100% - 820px)/2))}
+.quick{border:1px solid var(--line);border-radius:10px}
+.suggest{padding:6px 0}
+.sendbar{margin:0 max(14px,calc((100% - 820px)/2)) 6px;padding:8px;border:1px solid var(--line);border-radius:18px;background:var(--panel);box-shadow:0 2px 10px rgba(0,0,0,.05);align-items:flex-end}
+.sendbar:focus-within{border-color:var(--accent)}
+.sendbar textarea{border:0;background:none;outline:none;padding:8px 4px}
+.sendbar button{border-radius:10px}
+#btnAttach{border:0;background:none;font-size:16px;padding:6px 8px}
+#hsplit{border-top:0;margin:0 max(14px,calc((100% - 820px)/2))}
+.termwrap{border-radius:10px;overflow:hidden}
+.setlist{display:grid;gap:6px}
+.setrow{display:grid;grid-template-columns:190px minmax(0,1fr);gap:10px;align-items:center}
+.setrow>button{text-align:left;padding:8px 12px;font-size:13.5px}
+.sethead{font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);margin-top:6px}
+@media (max-width:900px){#app{grid-template-columns:1fr;height:auto}#side{border-right:0;border-bottom:1px solid var(--line)}#content{height:auto;min-height:100vh}.setrow{grid-template-columns:1fr}}
 </style>
 </head>
 <body>
-<header>
+<div id="app">
+<aside id="side">
   <h1>Agent-Squad</h1>
-  <select id="projSel" title="Project đang điều khiển"></select>
-  <button id="btnProj" class="small" title="Thêm / quản lý project">+ Project</button>
+  <div class="sideproj"><select id="projSel" title="Project đang điều khiển"></select><button id="btnProj" class="small" title="Thêm / quản lý project">+</button></div>
   <span class="pill"><span id="sdot" class="dot"></span><span id="stext">đang tải…</span></span>
-  <span class="spacer"></span>
-  <span class="hint" id="cfgSummary"></span>
-  <button id="btnCfg">Chọn agent &amp; model</button>
-  <button id="btnStart" class="primary">Start agents</button>
-  <button id="btnStop" class="danger">Stop</button>
-  <button id="btnAgents" class="small" title="Xem và sửa cây phân cấp agent: ai là cấp trên của ai, thêm, đổi tên, đổi model, xoá agent">🌳 Agents<span id="agBadge" class="badge" hidden></span></button>
-  <button id="btnAcc" class="small" title="Hồ sơ tài khoản Claude / Codex: dùng nhiều tài khoản và chọn tài khoản cho từng agent">👤 Tài khoản</button>
-  <button id="btnRes" class="small" title="Folder và file thật mà agent được đọc và sửa tại chỗ (code, tài liệu, dữ liệu)">📁 Tài nguyên<span id="resCount" class="hint"></span></button>
-  <button id="btnUsage" class="small" title="Số token mỗi agent đã dùng, chia theo Claude, Codex, Gemini">📊 Token</button>
-  <button id="btnNotify" class="small" title="Báo bằng tiếng và thông báo của trình duyệt khi agent xong, bị chặn hoặc cần bạn"></button>
-  <button id="btnUpdate" class="small" title="Tải bản Agent-Squad mới nhất từ GitHub và khởi động lại dashboard">⟳ Cập nhật</button>
-  <button id="btnRestart" class="small" title="Khởi động lại dashboard để dùng code mới trên máy (ví dụ sau khi gộp bản nâng cấp Agent-Squad)">↻ Khởi động lại</button>
-</header>
+  <div class="sidehead">Agents</div>
+  <nav class="tabs" id="tabs"></nav>
+  <div class="sidefoot">
+    <div class="row"><button id="btnStart" class="primary">▶ Start</button><button id="btnStop" class="danger">Stop</button></div>
+    <button id="btnSettings" title="Agent và model, tài khoản, tài nguyên, token, thông báo, cập nhật">⚙ Cài đặt<span id="agBadge" class="badge" hidden></span></button>
+  </div>
+</aside>
+<div id="content">
 <div id="banner" class="banner" hidden></div>
 
 <main>
-  <section id="secTasks">
-    <h2>Tasks <button id="btnHideTasks" class="small" title="Ẩn khung task để chat rộng hơn">✕</button><select id="catSel" hidden title="Lọc theo nhóm (Category)"></select><span class="spacer"></span><button id="btnCleanup" class="small" hidden title="Chuyển các task đã xong vào thư mục lưu trữ">🧹 Dọn</button><button id="btnNew" class="primary small">+ Việc mới</button></h2>
-    <div class="board" id="board"></div>
-  </section>
-  <div id="split" title="Kéo để đổi độ rộng khung task và chat. Bấm đúp để về mặc định."></div>
-
   <section>
-    <h2><span class="tabs" id="tabs"></span><span class="spacer"></span><button id="btnShowTasks" class="small" hidden title="Hiện lại khung task">📋 Tasks<span class="n" id="taskCount"></span></button><span id="agentStatus" class="pill"></span><button id="btnClearChat" class="small" title="Xoá nội dung chat của agent đang chọn">🗑 Xoá chat</button></h2>
+    <h2><span id="chatTitle"></span><span class="hint" id="chatSub"></span><span class="spacer"></span><button id="btnShowTasks" class="small" hidden title="Hiện lại khung task">📋 Tasks<span class="n" id="taskCount"></span></button><span id="agentStatus" class="pill"></span><button id="btnClearChat" class="small" title="Xoá nội dung chat của agent đang chọn">🗑 Xoá chat</button></h2>
     <div class="reqs" id="reqs" hidden></div>
     <div class="termwrap">
       <pre class="term" id="term"></pre>
       <div class="chatlog" id="chatlog" hidden></div>
-      <div id="startHint" class="starthint" hidden><p>Các agent của project này chưa chạy.</p><button id="btnStart2" class="primary">▶ Start agents</button><p class="hint">Muốn đổi agent, model hoặc kiểu hiển thị (chat / terminal) thì bấm "Chọn agent &amp; model" trước.</p></div>
+      <div id="startHint" class="starthint" hidden><p>Các agent của project này chưa chạy.</p><button id="btnStart2" class="primary">▶ Start agents</button><p class="hint">Muốn đổi agent, model hoặc kiểu hiển thị (chat / terminal) thì vào "⚙ Cài đặt" trước.</p></div>
     </div>
     <div class="quick" id="quick" hidden></div>
     <div class="suggest" id="suggest"></div>
@@ -232,8 +262,31 @@ a.btn:hover{border-color:var(--accent)}
     </details>
     <input type="file" id="fileInput" multiple hidden>
   </section>
+  <div id="split" title="Kéo để đổi độ rộng khung task và chat. Bấm đúp để về mặc định."></div>
+  <section id="secTasks">
+    <h2>Tasks <button id="btnHideTasks" class="small" title="Ẩn khung task để chat rộng hơn">✕</button><select id="catSel" hidden title="Lọc theo nhóm (Category)"></select><span class="spacer"></span><button id="btnCleanup" class="small" hidden title="Chuyển các task đã xong vào thư mục lưu trữ">🧹 Dọn</button><button id="btnNew" class="primary small">+ Việc mới</button></h2>
+    <div class="board" id="board"></div>
+  </section>
 </main>
+</div>
+</div>
 
+<dialog id="dlgSet">
+  <div class="dlg-h"><h3>⚙ Cài đặt</h3><button id="setClose" class="small">Đóng</button></div>
+  <div class="dlg-b setlist">
+    <div class="sethead">Agent</div>
+    <div class="setrow"><button id="btnCfg">🤖 Agent &amp; model</button><span class="hint" id="cfgSummary"></span></div>
+    <div class="setrow"><button id="btnAgents">🌳 Cây phân cấp</button><span class="hint">Ai là cấp trên của ai; thêm, đổi tên, đổi model, đổi tài khoản, xoá agent.</span></div>
+    <div class="setrow"><button id="btnAcc">👤 Tài khoản</button><span class="hint">Hồ sơ tài khoản Claude / Codex để dùng nhiều tài khoản.</span></div>
+    <div class="sethead">Project</div>
+    <div class="setrow"><button id="btnRes">📁 Tài nguyên<span id="resCount" class="hint"></span></button><span class="hint">Folder và file thật mà agent được đọc và sửa tại chỗ.</span></div>
+    <div class="setrow"><button id="btnUsage">📊 Token</button><span class="hint">Số token mỗi agent đã dùng, chia theo Claude, Codex, Gemini.</span></div>
+    <div class="sethead">Hệ thống</div>
+    <div class="setrow"><button id="btnNotify"></button><span class="hint">Báo bằng tiếng và thông báo trình duyệt khi agent xong, bị chặn hoặc cần bạn.</span></div>
+    <div class="setrow"><button id="btnUpdate">⟳ Cập nhật</button><span class="hint">Tải bản Agent-Squad mới nhất từ GitHub và khởi động lại dashboard.</span></div>
+    <div class="setrow"><button id="btnRestart">↻ Khởi động lại</button><span class="hint">Khởi động lại dashboard để dùng code mới trên máy.</span></div>
+  </div>
+</dialog>
 <dialog id="dlgTask">
   <div class="dlg-h"><h3 id="dtTitle"></h3>
     <select id="dtWorker"></select><button id="dtAssign" class="primary small">Giao</button>
@@ -617,7 +670,7 @@ function applyLayout(){
   const m = document.querySelector('main'), hidden = localGet('layout')==='hidden';
   m.classList.toggle('notasks', hidden); $('#btnShowTasks').hidden = !hidden;
   let w = +(localGet('split.'+proj) || localGet('split') || (localGet('layout')==='wide' ? Math.round(window.innerWidth*0.45) : DEF_W));
-  w = Math.max(220, Math.min(w, Math.max(220, window.innerWidth - 46 - 380)));
+  w = Math.max(220, Math.min(w, Math.max(220, m.clientWidth - 30 - 380)));
   m.style.setProperty('--taskW', w+'px'); m.classList.toggle('wide', w>=620);
   const h = Math.max(38, Math.min(+(localGet('msgH')||38), Math.round(window.innerHeight*0.6)));
   $('#msg').style.height = h+'px';
@@ -630,7 +683,7 @@ function dragger(el, onMove){
     el.addEventListener('pointermove',mv); el.addEventListener('pointerup',up); el.addEventListener('pointercancel',up);
   });
 }
-dragger($('#split'), e=>{ const r = document.querySelector('main').getBoundingClientRect(); localSet('split.'+proj, Math.round(e.clientX - r.left - 16 - 7)); applyLayout() });
+dragger($('#split'), e=>{ const r = document.querySelector('main').getBoundingClientRect(); localSet('split.'+proj, Math.round(r.right - e.clientX - 12 - 7)); applyLayout() });
 $('#split').ondblclick = ()=>{ localSet('split.'+proj, DEF_W); applyLayout() };
 dragger($('#hsplit'), e=>{ const r = $('#msg').getBoundingClientRect(); localSet('msgH', Math.round(r.bottom - e.clientY - 6)); applyLayout() });
 $('#hsplit').ondblclick = ()=>{ localSet('msgH', 38); applyLayout() };
@@ -894,8 +947,13 @@ function renderTabs(){
   const wins = all.filter(w=>w.name!=='watch' || $('#showWatch').checked || win==='watch');
   if(wins.length && !wins.some(w=>w.name===win)) win = wins[0].name;
   $('#tabs').innerHTML = wins.map(w=>`<button class="tab small${w.name===win?' sel':''}" data-win="${esc(w.name)}" title="${esc(w.name==='lead'?'Lead: chia việc và nói chuyện với bạn':(workerInfo(w.name)||w.name)+(state?.hierarchy?.[w.name]?' · báo cáo cho '+state.hierarchy[w.name]:''))}">${w.depth>1?'<span class="hint">'+'·'.repeat(w.depth-1)+'</span>':''}${w.depth?'└ ':''}${esc(winLabel(w.name))}${w.busy?'<span class="busy" title="đang làm việc"></span>':''}${w.wants?'<span class="need" title="đang chờ bạn bấm Cho phép">!</span>':''}</button>`).join('') || '<span class="hint">Agents</span>';
+  $('#chatTitle').textContent = winLabel(win);
+  $('#chatSub').textContent = $('#chatSub').title = win==='lead' ? 'chia việc và nói chuyện với bạn' : (workerInfo(win)||'') + (state?.hierarchy?.[win] ? ' · báo cáo cho '+state.hierarchy[win] : '');
   renderSuggest();
 }
+$('#btnSettings').onclick = ()=>$('#dlgSet').showModal();
+$('#setClose').onclick = ()=>$('#dlgSet').close();
+$('#dlgSet').addEventListener('click', e=>{ const b = e.target.closest('.setrow>button'); if(b && b.id!=='btnNotify') $('#dlgSet').close() });
 $('#showWatch').onchange = ()=>{ if(state) renderTabs() };
 
 const SUGGEST = {

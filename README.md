@@ -15,7 +15,7 @@ Nâng cấp chính Agent-Squad bằng agent: chọn project Agent-Squad trên da
 - `scripts/start-agents.sh`: dựng phiên tmux (lead và workers là claude/codex/gemini, mỗi worker một git worktree).
   Mỗi agent viết `[<tên>=]<agent>[@<model>][#<effort>]` (tên chỉ cho worker, để phân biệt nhiều worker cùng model), ví dụ
   `LEAD="codex@gpt-6.1-sol#high" WORKERS="claude@opus#xhigh gemini@gemini-3.5-flash" scripts/start-agents.sh`
-  (trên dashboard: nút "Chọn agent & model"; danh sách model/effort ở `dashboard/catalog.json`).
+  (trên dashboard: "⚙ Cài đặt" > "Agent & model"; danh sách model/effort ở `dashboard/catalog.json`).
   Lead không gọi được tmux (ví dụ Codex trong sandbox) thì đặt `Status: ready`, `watch-tasks.sh` sẽ tự giao.
 - `scripts/assign.sh <ID> <worker>`: lead giao task.
 - `scripts/watch-tasks.sh`: chạy nền trong window `watch`, tự báo lead khi một task chuyển sang `done`/`blocked`
@@ -27,7 +27,9 @@ Nâng cấp chính Agent-Squad bằng agent: chọn project Agent-Squad trên da
   Nhiều project: nút "+ Project" (duyệt thư mục, hộp thoại chọn thư mục của Windows, hoặc gõ `~/app` / `D:\Web\app`);
   thư mục chưa là repo thì tự `git init` + commit đầu. Mỗi project một phiên tmux riêng, danh sách lưu ở
   `~/.agent-squad/projects.json` (xoá khỏi danh sách không xoá file). Dashboard tự tạo file khung nếu repo chưa có.
-- Kiểu hiển thị (trong "Chọn agent & model"):
+- Bố cục: cột trái là project và danh sách agent (bấm để mở chat), giữa là chat, cột phải là Tasks. Mọi mục cài đặt
+  ("Agent & model", "Cây phân cấp", "Tài khoản", "Tài nguyên", "Token", thông báo, cập nhật) nằm trong nút **⚙ Cài đặt** ở góc dưới cột trái.
+- Kiểu hiển thị (trong "⚙ Cài đặt" > "Agent & model"):
   - **💬 Chat** (mặc định, `dashboard/chat.js`): agent chạy ẩn (`claude -p`, `codex exec`, `gemini -p`), dashboard hiện
     tin nhắn dạng chat với các bước làm thu gọn được. Lead giao việc bằng `Status: ready`, dashboard tự chạy worker
     và báo lead khi task xong. Quyền ban đầu an toàn: sửa file trong project, chạy lệnh git và lệnh kiểm tra, Codex
@@ -48,7 +50,7 @@ Nâng cấp chính Agent-Squad bằng agent: chọn project Agent-Squad trên da
   - **🔀 Agent git** (project điều hành): tự có một agent tên `git` (Claude, model haiku) là agent duy nhất chạy commit/pull/merge/push trong các
     thư mục tài nguyên; Lead giao việc cho nó bằng task `Owner: git`. Các agent khác bị dặn không chạy git ở đó. Push vẫn cần bạn bấm "Cho phép".
     Không dùng Codex cho agent này vì sandbox của Codex không ghi được `.git`.
-  - **🌳 Agents**: xem cây phân cấp, kéo thả để đổi cấp trên (ghi vào `.agents/hierarchy.txt`); ở kiểu Chat còn thêm,
+  - **🌳 Cây phân cấp**: xem cây phân cấp, kéo thả để đổi cấp trên (ghi vào `.agents/hierarchy.txt`); ở kiểu Chat còn thêm,
     đổi tên, đổi model/effort và xoá agent (cấp dưới chuyển lên cấp trên, task đang giữ về Todo, worktree được giữ lại).
   - **📊 Token**: số token mỗi agent đã dùng và tỉ lệ % theo Claude / Codex / Gemini (kiểu Chat, lưu ở `.agents/chat/usage.json`).
   - **👤 Tài khoản**: hồ sơ đăng nhập riêng cho Claude và Codex (ChatGPT), lưu ở `~/.agent-squad/accounts/<hồ sơ>/` (Claude dùng `CLAUDE_CONFIG_DIR`,
@@ -57,7 +59,7 @@ Nâng cấp chính Agent-Squad bằng agent: chọn project Agent-Squad trên da
     Đổi tài khoản hoặc model thì agent bắt đầu cuộc trò chuyện mới; mặc định agent **ghi bộ nhớ ra `.agents/handoff/<tên>.md` trước khi đổi** và đọc lại sau đó
     (nếu agent không ghi được, ví dụ hết hạn mức, dashboard lấy phần cuối lịch sử chat thay thế). Nút "💾 Cập nhật bộ nhớ ngay" ghi bộ nhớ bất cứ lúc nào.
     Bảng Token hiện theo tài khoản. Gemini chưa hỗ trợ.
-  - **⚡ context-mode** (thử nghiệm, "Chọn agent & model", tắt mặc định, theo project): agent Claude nạp MCP server
+  - **⚡ context-mode** (thử nghiệm, "Agent & model", tắt mặc định, theo project): agent Claude nạp MCP server
     [mksglu/context-mode](https://github.com/mksglu/context-mode) (`npx -y context-mode`, cần Node.js 22.5+) để dữ liệu lớn (log dài, nhiều file) không đổ hết vào ngữ cảnh.
     Chỉ cho Claude, đổi xong áp dụng từ lượt sau. Rủi ro: nó cho agent chạy code trong ô riêng, nằm ngoài danh sách lệnh an toàn và nút "Cho phép"
     (dashboard hỏi lại khi bật). Bảng Token đánh dấu ⚡ và có cột TB/lượt để so sánh trước và sau.
