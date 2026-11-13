@@ -315,6 +315,7 @@ dialog.pane>.dlg-h>button[id$="Close"]{display:none}
       <button id="btnCfg" title="Chọn lead, các worker và model cho lần Start tiếp theo; kiểu Chat / Terminal">🤖 Đội agent khi Start</button>
       <button id="btnAgents" title="Agent đang có: đổi cấp trên, model, tài khoản, thêm, đổi tên, xoá">🌳 Agent đang chạy</button>
       <button id="btnPerm" title="Xem, thu hồi và cho phép trước quyền của từng agent">🔐 Quyền</button>
+      <button id="btnMem" title="Bộ nhớ chung của project và ghi chú riêng của từng agent">🧠 Bộ nhớ</button>
       <button id="btnAcc" title="Hồ sơ tài khoản Claude / Codex">👤 Tài khoản</button>
       <button id="btnRes" title="Folder và file thật mà agent được đọc và sửa tại chỗ">📁 Tài nguyên<span id="resCount" class="hint"></span></button>
       <button id="btnUsage" title="Số token mỗi agent đã dùng">📊 Token</button>
@@ -328,6 +329,25 @@ dialog.pane>.dlg-h>button[id$="Close"]{display:none}
   <div class="dlg-b">
     <p class="hint" style="margin:0">Mặc định agent chỉ được sửa file trong project và chạy các lệnh an toàn (xem file, git cục bộ, lệnh kiểm tra). Ở đây bạn xem quyền đã cấp thêm, thu hồi từng quyền, hoặc cho phép trước theo nhóm để agent đỡ phải hỏi. Quyền có hiệu lực từ lượt làm việc tiếp theo.</p>
     <div id="permBody" style="display:grid;gap:8px"></div>
+  </div>
+</dialog>
+<dialog id="dlgMem">
+  <div class="dlg-h"><h3>🧠 Bộ nhớ</h3></div>
+  <div class="dlg-b">
+    <div class="box"><h4>Bộ nhớ chung của project</h4>
+      <p class="hint" style="margin:0">Các quyết định, quy ước và sở thích của bạn. Mọi agent đọc phần này khi bắt đầu một cuộc trò chuyện mới, và tự ghi thêm một dòng khi bạn chốt điều gì. Bạn sửa hoặc xoá tuỳ ý; nên giữ dưới 60 dòng.</p>
+      <textarea id="memShared" style="min-height:170px" placeholder="- Ví dụ: game dùng Unity 6, mã nguồn nằm trong game/Assets/AnimalBag&#10;- Trả lời bằng tiếng Việt, ngắn gọn"></textarea>
+      <div class="row"><span class="hint" id="memFile"></span><span class="spacer"></span><button id="memSave" class="primary small">Lưu</button></div>
+    </div>
+    <div class="box"><h4>♻️ Tự làm mới cuộc trò chuyện</h4>
+      <label style="display:flex;gap:8px;align-items:center;color:var(--text)">Khi cuộc trò chuyện của một agent dài quá
+        <select id="memRefresh"><option value="0">không bao giờ (tắt)</option><option value="80000">80k token</option><option value="120000">120k token (mặc định)</option><option value="160000">160k token</option></select></label>
+      <p class="hint" style="margin:0">Cuộc trò chuyện càng dài thì mỗi bước càng tốn token, vì agent phải đọc lại tất cả. Khi vượt ngưỡng và có việc mới, agent ghi lại ghi chú của mình rồi bắt đầu cuộc trò chuyện mới, đọc lại ghi chú và bộ nhớ chung. Hiện chỉ đo được với agent Claude.</p>
+    </div>
+    <div class="box"><h4>Ghi chú riêng của từng agent</h4>
+      <p class="hint" style="margin:0">Việc đang làm dở và những gì agent cần nhớ khi sang cuộc trò chuyện mới. Agent tự ghi khi đổi tài khoản, đổi model, khi tự làm mới, hoặc khi bạn bấm "Cập nhật ngay".</p>
+      <div id="memAgents" style="display:grid;gap:8px"></div>
+    </div>
   </div>
 </dialog>
 <dialog id="dlgSys">
@@ -382,6 +402,10 @@ dialog.pane>.dlg-h>button[id$="Close"]{display:none}
     <div class="box"><h4>Kiểu hiển thị</h4>
       <span class="seg"><button id="vmChat">💬 Chat (dễ dùng)</button><button id="vmTerm">🖥 Terminal (như cũ)</button></span>
       <p class="hint" style="margin:0" id="vmHint"></p>
+    </div>
+    <div class="box" id="shareBox"><h4>📂 Thư mục làm việc của agent</h4>
+      <span class="seg"><button id="shOn">Chung một thư mục</button><button id="shOff">Mỗi agent một bản riêng</button></span>
+      <p class="hint" style="margin:0" id="shHint"></p>
     </div>
     <div class="box"><h4>⚡ Tiết kiệm token (thử nghiệm)</h4>
       <label style="display:flex;gap:6px;align-items:center;color:var(--text)"><input type="checkbox" id="cmToggle"> Bật context-mode cho các agent Claude của project này</label>
@@ -680,13 +704,35 @@ function saveCfg(){
   resolveNames(c.workers).forEach((n,i)=>{ c.workers[i].name = n });
   cfg=c; localSet('cfg.'+proj, JSON.stringify(cfg)); $('#cfgSummary').textContent = $('#cfgSummary').title = cfgSummaryText(); return true;
 }
+const isShared = ()=> !!state?.project?.shared;
+function renderShare(){
+  $('#shareBox').hidden = isOffice();
+  $('#shOn').classList.toggle('sel', isShared()); $('#shOff').classList.toggle('sel', !isShared());
+  $('#shHint').textContent = isShared()
+    ? 'Mọi agent làm thẳng trong thư mục project, nên kết quả luôn nằm ở một chỗ và không cần bước "Gộp code". Hợp với project Unity hoặc đội ít agent. Lead chia việc sao cho hai agent không sửa cùng một file. Chỉ áp dụng cho kiểu Chat.'
+    : 'Mỗi worker có một bản sao riêng của project (trong thư mục <project>-agents/ cạnh project), làm xong phải bấm "Gộp code" thì kết quả mới về thư mục chính. Hợp với project code cần nhiều agent làm song song.';
+}
+$('#shOn').onclick = async()=>{
+  if(isShared()) return;
+  if(!confirm('Chuyển sang dùng chung một thư mục?\n\nDashboard sẽ lưu phần việc đang dở của từng agent, gộp vào thư mục chính của project, rồi bỏ các bản sao riêng. Nếu gộp bị xung đột thì dừng lại và báo bạn, không xoá gì. Các agent sẽ bắt đầu cuộc trò chuyện mới và đọc lại bộ nhớ.')) return;
+  try{
+    const r = await api('POST','/api/project/share');
+    toast('Đã chuyển sang thư mục chung.' + (r.log?.length ? '\n'+r.log.join('\n') : '') + (r.kept?.length ? '\nCòn giữ lại (có file chưa lưu, bạn tự xoá khi không cần):\n'+r.kept.join('\n') : ''), 'ok');
+    await refreshState(); renderShare();
+  }catch(x){ toast(x.message,'err') }
+};
+$('#shOff').onclick = async()=>{
+  if(!isShared()) return;
+  if(!confirm('Quay lại "mỗi agent một bản riêng"?\n\nÁp dụng ở lần Start tiếp theo: mỗi worker sẽ được tạo một bản sao riêng và bạn cần "Gộp code" sau khi worker làm xong.')) return;
+  try{ await api('POST','/api/project/settings',{shared:false}); await refreshState(); renderShare(); toast('Đã đổi. Stop rồi Start lại để áp dụng.','ok') }catch(x){ toast(x.message,'err') }
+};
 $('#cmToggle').addEventListener('change', async e=>{
   const want = e.target.checked;
   if(want && !confirm('Bật context-mode?\n\nNó cho agent Claude chạy code (Python, shell...) trong một ô riêng. Phần này nằm ngoài danh sách lệnh an toàn và nút "Cho phép", nên agent có thể chạy lệnh (ví dụ xoá file, git push) mà bạn không được hỏi.\n\nChỉ bật nếu bạn chấp nhận rủi ro đó. Tắt lại bất cứ lúc nào.')){ e.target.checked=false; return }
   try{ await api('POST','/api/project/settings',{contextMode:want}); toast(want?'Đã bật context-mode. Áp dụng từ lượt nhắn tiếp theo của agent Claude.':'Đã tắt context-mode.','ok'); await refreshState() }
   catch(x){ toast(x.message,'err'); e.target.checked=!want }
 });
-$('#btnCfg').onclick = ()=>{cfg=loadCfg(); renderCfg(); $('#cmToggle').checked = !!state?.project?.contextMode; $('#cfgProj').textContent = '· '+($('#projSel').selectedOptions[0]?.textContent||''); $('#dlgCfg').showModal()};
+$('#btnCfg').onclick = ()=>{cfg=loadCfg(); renderCfg(); renderShare(); $('#cmToggle').checked = !!state?.project?.contextMode; $('#cfgProj').textContent = '· '+($('#projSel').selectedOptions[0]?.textContent||''); $('#dlgCfg').showModal()};
 $('#cfgClose').onclick = ()=>$('#dlgCfg').close();
 $('#cfgAdd').onclick = ()=>{cfg = readCfgForm(); const w={agent:'codex',model:'',effort:''}; w.name = resolveNames([...cfg.workers, w]).pop(); cfg.workers.push(w); renderCfg()};
 $('#dlgCfg').addEventListener('click',e=>{const b=e.target.closest('.rm'); if(!b) return; cfg=readCfgForm(); cfg.workers.splice(+b.closest('.arow').dataset.i,1); renderCfg()});
@@ -1007,7 +1053,7 @@ function renderTabs(){
 }
 // Cài đặt: một hộp thoại, mỗi mục là một tab. Các hộp thoại cũ được đưa vào làm "khung" bên trong,
 // showModal() của chúng được đổi thành "mở tab đó", nên phần code còn lại không cần biết gì về tab.
-const PANES = {dlgCfg:'btnCfg', dlgAgents:'btnAgents', dlgPerm:'btnPerm', dlgAcc:'btnAcc', dlgRes:'btnRes', dlgUsage:'btnUsage', dlgSys:'btnSys'};
+const PANES = {dlgCfg:'btnCfg', dlgAgents:'btnAgents', dlgPerm:'btnPerm', dlgMem:'btnMem', dlgAcc:'btnAcc', dlgRes:'btnRes', dlgUsage:'btnUsage', dlgSys:'btnSys'};
 for(const id of Object.keys(PANES)){
   const d = $('#'+id); $('#setBody').append(d); d.classList.add('pane');
   d.showModal = ()=>{
@@ -1024,6 +1070,26 @@ $('#dlgSet').addEventListener('close', e=>{ if(e.target===$('#dlgSet')) for(cons
 $('#btnSettings').onclick = ()=>{ const b = PANES[localGet('setTab')] || 'btnCfg'; $('#'+b).click() };
 $('#setClose').onclick = ()=>$('#dlgSet').close();
 $('#btnSys').onclick = ()=>$('#dlgSys').showModal();
+
+// ---------------------------------------------------------------- bộ nhớ
+async function renderMem(){
+  let j; try{ j = await api('GET','/api/memory') }catch(e){ toast(e.message,'err'); return }
+  $('#memShared').value = j.shared; $('#memFile').textContent = j.file;
+  const sel = $('#memRefresh'); if(![...sel.options].some(o=>+o.value===j.refreshAt)) sel.add(new Option(fmtTok(j.refreshAt)+' token', j.refreshAt)); sel.value = String(j.refreshAt);
+  $('#memAgents').innerHTML = j.agents.map(a=>`<details data-agent="${esc(a.name)}"><summary><b style="color:var(--text)">${esc(winLabel(a.name))}</b> · ${a.text ? 'ghi chú cập nhật '+esc(new Date(a.mtime).toLocaleString()) : 'chưa có ghi chú'}${a.ctx ? ' · cuộc trò chuyện hiện dài khoảng '+fmtTok(a.ctx)+' token' : ''}</summary>
+    <textarea style="min-height:140px;width:100%;margin-top:6px">${esc(a.text)}</textarea>
+    <div class="row"><button class="small" data-memnow title="Cho agent tự viết lại ghi chú ngay bây giờ (tốn một lượt ngắn)">💾 Cập nhật ngay</button><span class="spacer"></span><button class="small primary" data-memsave>Lưu</button></div></details>`).join('') || '<span class="hint">Chưa có agent nào (cần Start ở kiểu Chat).</span>';
+}
+$('#btnMem').onclick = ()=>{ $('#dlgMem').showModal(); renderMem() };
+$('#memSave').onclick = async()=>{ try{ await api('POST','/api/memory',{text:$('#memShared').value}); toast('Đã lưu bộ nhớ chung.','ok') }catch(e){ toast(e.message,'err') } };
+$('#memRefresh').onchange = async e=>{ try{ await api('POST','/api/project/settings',{refreshAt:+e.target.value}); toast('Đã lưu.','ok') }catch(x){ toast(x.message,'err') } };
+$('#memAgents').addEventListener('click', async e=>{
+  const row = e.target.closest('[data-agent]'); if(!row) return; const name = row.dataset.agent;
+  try{
+    if('memsave' in e.target.dataset){ await api('POST','/api/memory/agent/'+encodeURIComponent(name),{text:row.querySelector('textarea').value}); toast('Đã lưu ghi chú của '+name+'.','ok') }
+    else if('memnow' in e.target.dataset){ await api('POST',`/api/agents/${encodeURIComponent(name)}/memory`); toast(name+' đang viết lại ghi chú. Mở lại tab này sau khi agent xong.','ok') }
+  }catch(x){ toast(x.message,'err') }
+});
 
 // ---------------------------------------------------------------- quyền của agent
 const PERM_GROUPS = [
@@ -1065,6 +1131,13 @@ const SUGGEST = {
     ['⬆️ Push GitHub', 'Đẩy (push) nhánh chính lên GitHub và báo kết quả.'],
     ['❓ Giải thích', 'Giải thích ngắn gọn, dễ hiểu bạn vừa làm gì và bước tiếp theo là gì.'],
   ],
+  leadShared: [
+    ['🗂 Giao việc mới', 'Hãy lên kế hoạch, chia thành task nhỏ và giao cho worker: ', true],
+    ['📋 Tiến độ', 'Báo cáo ngắn gọn tiến độ các task hiện tại.'],
+    ['💾 Lưu vào git', 'Kiểm tra các thay đổi chưa commit trong project, commit lại với lời mô tả rõ ràng rồi báo kết quả.'],
+    ['⬆️ Push GitHub', 'Đẩy (push) nhánh chính lên GitHub và báo kết quả.'],
+    ['❓ Giải thích', 'Giải thích ngắn gọn, dễ hiểu bạn vừa làm gì và bước tiếp theo là gì.'],
+  ],
   leadOffice: [
     ['🗂 Giao việc mới', 'Hãy lên kế hoạch, chia thành task nhỏ và giao cho worker: ', true],
     ['📋 Tiến độ', 'Báo cáo ngắn gọn tiến độ các task hiện tại.'],
@@ -1084,7 +1157,7 @@ const SUGGEST = {
     ['⏸ Dừng lại', 'Dừng lại, ghi lý do vào phần Notes của task và đặt Status: blocked.'],
   ],
 };
-const suggestKey = ()=> win==='lead' ? (isOffice()?'leadOffice':'lead') : (win==='git' && isOffice()) ? 'git' : 'worker';
+const suggestKey = ()=> win==='lead' ? (isOffice()?'leadOffice':isShared()?'leadShared':'lead') : (win==='git' && isOffice()) ? 'git' : 'worker';
 function renderSuggest(){
   const list = win==='watch' ? [] : SUGGEST[suggestKey()];
   $('#suggest').innerHTML = list.map(([l,t,open],i)=>`<button data-s="${i}" title="${esc(t)}">${esc(l)}</button>`).join('');

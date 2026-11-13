@@ -34,6 +34,21 @@ Nâng cấp chính Agent-Squad bằng agent: chọn project Agent-Squad trên da
   (Python, .NET / Unity, cài thư viện npm, tải từ mạng, git push; với Codex là quyền mạng). Vẫn là bạn tự bấm, không có chế độ bỏ qua toàn bộ.
 - Trong chat: các bước agent làm gom thành một dòng ("Đã làm 6 bước · sửa 2 file"), mỗi bước ghi bằng lời, bấm vào mới thấy câu lệnh.
   Ảnh hiện thẳng trong chat; bấm ảnh hoặc thẻ file thì mở ở cột phải (file `.md` hiện dạng tài liệu), bấm ✕ để quay lại Tasks.
+- Thư mục làm việc của agent (project Code, kiểu Chat; chọn trong "⚙ Cài đặt" > "Đội agent khi Start"):
+  - **Chung một thư mục** (mặc định cho project mới): mọi agent làm thẳng trong thư mục project, cùng một nhánh, không có bước "Gộp code".
+    Hợp với project Unity hoặc đội ít agent. Agent được dặn chỉ sửa file của task mình và chỉ commit file của mình.
+  - **Mỗi agent một bản riêng**: mỗi worker có một git worktree và nhánh `agent/<tên>` trong `<project>-agents/<tên>` (bản tạo kiểu cũ
+    `<project>-<tên>` vẫn dùng tiếp), làm xong thì "Gộp code".
+  - Bấm "Chung một thư mục" trên project đang chạy kiểu bản riêng: dashboard commit việc đang dở của từng agent, merge các nhánh `agent/<tên>`
+    vào thư mục chính rồi bỏ các worktree. Xung đột thì dừng lại và báo, không xoá gì.
+- Bộ nhớ (kiểu Chat, tab "🧠 Bộ nhớ" trong Cài đặt):
+  - **Bộ nhớ chung** `.agents/memory.md`: quyết định, quy ước, sở thích của bạn. Agent được dặn ghi thêm một dòng khi bạn chốt điều gì;
+    nội dung được đưa vào đầu mọi cuộc trò chuyện mới của mọi agent. Xem và sửa được trong tab.
+  - **Ghi chú riêng của từng agent** `.agents/handoff/<tên>.md`: việc đang dở. Được ghi khi đổi tài khoản / model, khi tự làm mới,
+    khi bấm "Cập nhật ngay"; "Cuộc trò chuyện mới" giữ lại một bản tóm tắt từ lịch sử chat nếu chưa có ghi chú gần đây.
+  - **Tự làm mới cuộc trò chuyện**: khi cuộc trò chuyện của một agent Claude vượt ngưỡng (mặc định 120k token, chỉnh hoặc tắt trong tab)
+    và có việc mới (bạn nhắn hoặc nhận task), agent ghi ghi chú rồi làm việc đó trong cuộc trò chuyện mới. Codex / Gemini chưa đo được độ dài.
+  - context-mode không phải bộ nhớ: nó chỉ giữ dữ liệu lớn ở ngoài cuộc trò chuyện.
 - Kiểu hiển thị (trong "⚙ Cài đặt" > "Đội agent khi Start"):
   - **💬 Chat** (mặc định, `dashboard/chat.js`): agent chạy ẩn (`claude -p`, `codex exec`, `gemini -p`), dashboard hiện
     tin nhắn dạng chat với các bước làm thu gọn được. Lead giao việc bằng `Status: ready`, dashboard tự chạy worker
