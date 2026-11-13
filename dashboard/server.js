@@ -793,10 +793,29 @@ on('POST', /^\/api\/upload$/, (req, res, _m, url) => new Promise((resolve) => {
 
 // Xem / tải file trong project để hiện ảnh và file trong chat. Chỉ file nằm trong project hoặc worktree của agent.
 const IMG_TYPES = { '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.gif': 'image/gif', '.webp': 'image/webp', '.bmp': 'image/bmp', '.svg': 'image/svg+xml' };
+// Thay đổi của một file theo git: so với lần lưu (commit) gần nhất; nếu không có gì khác thì lấy thay đổi của lần lưu gần nhất.
+function fileDiff(file) {
+  const git = (...a) => require('child_process').execFileSync('git', ['-c', 'core.quotepath=off', ...a], { cwd: path.dirname(file), encoding: 'utf8', timeout: 8000, maxBuffer: 4 * 1024 * 1024, stdio: ['ignore', 'pipe', 'ignore'] });
+  const cut = (d) => ({ diff: d.slice(0, 200 * 1024), truncated: d.length > 200 * 1024 });
+  try {
+    git('rev-parse', '--is-inside-work-tree');
+    let tracked = true;
+    try { git('ls-files', '--error-unmatch', '--', file); } catch { tracked = false; }
+    if (!tracked) return { kind: 'new', diff: '' };
+    let d = '';
+    try { d = git('diff', '--no-color', 'HEAD', '--', file); } catch { /* repo chưa có commit nào */ }
+    if (d.trim()) return { kind: 'unsaved', ...cut(d) };
+    const last = git('log', '-1', '--no-color', '--format=%x01%s%x01%cI', '-p', '--', file);
+    const m = last.match(/^\x01([^\x01]*)\x01([^\n]*)\n([\s\S]*)$/);
+    if (m && m[3].trim()) return { kind: 'last', subject: m[1].slice(0, 200), when: m[2], ...cut(m[3]) };
+    return { kind: 'none', diff: '' };
+  } catch { return { kind: 'nogit', diff: '' }; }
+}
 on('GET', /^\/api\/file$/, (req, res, _m, url) => {
   const ctx = getCtx(url);
   const f = chat.resolveFile(ctx, url.searchParams.get('path'));
   if (!f) return send(res, 404, { error: 'Không mở được file này (không tồn tại hoặc nằm ngoài project).' });
+  if (url.searchParams.get('diff')) return send(res, 200, { ...f, ...fileDiff(f.path) });
   if (url.searchParams.get('text')) {
     const fd = fs.openSync(f.path, 'r');
     const buf = Buffer.alloc(Math.min(f.size, 300 * 1024));

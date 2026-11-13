@@ -111,6 +111,8 @@ code{font:12px ui-monospace,Consolas,monospace}
 .tag{font-size:11px;border:1px solid var(--done);color:var(--done);border-radius:99px;padding:0 6px;margin-left:auto}
 .termwrap{position:relative;flex:1;display:flex;min-height:200px}
 .termwrap .term{flex:1}
+pre.diff span{display:block}pre.diff .da{background:#e3f1e0;color:#1d5a2a}pre.diff .dd{background:#f8e1dc;color:#8a2a1c}pre.diff .dh{color:var(--muted);text-align:center}
+#dfMode button{font-size:12px;padding:2px 8px}
 .starthint{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;background:var(--bg);color:var(--text);text-align:center;padding:16px}
 .starthint button{font-size:14px;padding:8px 16px}
 .shteam{display:flex;gap:6px;flex-wrap:wrap;justify-content:center;max-width:620px}
@@ -308,7 +310,7 @@ dialog.pane>.dlg-h>button[id$="Close"]{display:none}
     <div class="board" id="board"></div>
   </section>
   <section id="secFile" hidden>
-    <h2><span id="dfTitle" class="ftitle"></span><span class="spacer"></span><a id="dfDl" class="btn" download>⬇ Tải về</a><button id="dfClose" class="small" title="Đóng khung xem file">✕</button></h2>
+    <h2><span id="dfTitle" class="ftitle"></span><span class="seg" id="dfMode" hidden><button data-m="text" class="sel">Nội dung</button><button data-m="diff" title="Xem agent đã thêm, bớt những dòng nào">Thay đổi</button></span><span class="spacer"></span><a id="dfDl" class="btn" download>⬇ Tải về</a><button id="dfClose" class="small" title="Đóng khung xem file">✕</button></h2>
     <div id="dfBody"></div><span class="hint" id="dfNote"></span>
   </section>
 </main>
@@ -1325,29 +1327,55 @@ function filesHtml(m){
     + fl.filter(f=>f.kind!=='image').map(f=>`<button class="filecard" ${attr(f)} title="${esc(f.path)}">📄 <b>${esc(f.name)}</b><span class="hint">${fmtSize(f.size||0)}${f.edited?' · vừa sửa':''}</span></button>`).join('') + '</div>';
 }
 // file mở ở cột phải (thay chỗ Tasks), giống khung Artifacts của Claude
-let openPath = '';
+let openPath = '', openArgs = null, fileMode = 'text';
 async function openFile(path, name, kind){
-  openPath = path;
+  if(openPath!==path) fileMode = 'text';
+  openPath = path; openArgs = [path, name, kind];
+  $('#dfMode').hidden = kind==='image'; for(const b of $('#dfMode').children) b.classList.toggle('sel', b.dataset.m===fileMode);
   $('#dfTitle').textContent = name; $('#dfTitle').title = path; $('#dfDl').href = fileUrl(path,'&dl=1'); $('#dfDl').setAttribute('download', name); $('#dfNote').textContent = path;
   const body = $('#dfBody'); body.innerHTML = '<span class="hint">Đang mở…</span>';
   $('#secFile').hidden = false; applyLayout(); markOpenFile();
   if(kind==='image'){ body.innerHTML = `<img src="${esc(fileUrl(path))}" alt="${esc(name)}">`; return }
+  if(fileMode==='diff'){
+    try{
+      const j = await api('GET','/api/file?path='+encodeURIComponent(path)+'&diff=1'); if(openPath!==path || fileMode!=='diff') return;
+      const cap = j.kind==='unsaved' ? 'So với lần lưu (commit) gần nhất. Dòng xanh là thêm vào, dòng đỏ là bỏ đi.'
+        : j.kind==='last' ? `File đang giống bản đã lưu. Dưới đây là thay đổi trong lần lưu gần nhất: "${j.subject}" (${new Date(j.when).toLocaleString()}).`
+        : j.kind==='new' ? 'File mới, chưa lưu (commit) lần nào nên toàn bộ nội dung là phần thêm vào. Bấm "Nội dung" để xem.'
+        : j.kind==='nogit' ? 'Thư mục chứa file này không dùng git nên không có lịch sử thay đổi.' : 'Chưa ghi nhận thay đổi nào của file này.';
+      body.innerHTML = `<p class="hint" style="margin:0 0 8px">${esc(cap)}${j.truncated?' Thay đổi dài, chỉ hiện phần đầu.':''}</p>` + (j.diff ? `<pre class="diff">${diffHtml(j.diff)}</pre>` : '');
+    }catch(e){ body.innerHTML = `<span class="hint">${esc(e.message)}</span>` }
+    return;
+  }
   try{
-    const j = await api('GET','/api/file?path='+encodeURIComponent(path)+'&text=1'); if(openPath!==path) return;
+    const j = await api('GET','/api/file?path='+encodeURIComponent(path)+'&text=1'); if(openPath!==path || fileMode!=='text') return;
     if(j.binary) body.innerHTML = '<span class="hint">File này không phải dạng chữ nên không xem trước được. Bấm "Tải về" để mở bằng ứng dụng trên máy.</span>';
     else if(/\.(md|markdown)$/i.test(name)) body.innerHTML = `<div class="doc msg agent">${md(j.text)}</div>`;
     else { body.innerHTML = '<pre></pre>'; body.firstChild.textContent = j.text }
     if(j.truncated) $('#dfNote').textContent = path + ' · file dài, chỉ hiện phần đầu. Bấm "Tải về" để xem đủ.';
   }catch(e){ body.innerHTML = `<span class="hint">${esc(e.message)}</span>` }
 }
+// diff của git: bỏ các dòng đầu kỹ thuật, tô màu dòng thêm / bớt
+function diffHtml(d){
+  let body = false;
+  return d.split('\n').map(l=>{
+    if(l.startsWith('@@')){ body = true; return '<span class="dh">⋯</span>' }
+    if(!body || l.startsWith('\\')) return '';
+    const c = l[0]==='+' ? 'da' : l[0]==='-' ? 'dd' : '';
+    return `<span${c?` class="${c}"`:''}>${esc(l[0]==='+'||l[0]==='-'||l[0]===' ' ? (c ? l[0]+' ' : '  ')+l.slice(1) : l) || ' '}</span>`;
+  }).filter(Boolean).join('');
+}
+$('#dfMode').onclick = e=>{ const b = e.target.closest('[data-m]'); if(!b || !openArgs || b.dataset.m===fileMode) return; fileMode = b.dataset.m; openFile(...openArgs) };
 function markOpenFile(){ for(const el of document.querySelectorAll('#chatlog .filecard')) el.classList.toggle('sel', !$('#secFile').hidden && el.dataset.file===openPath) }
 $('#dfClose').onclick = ()=>{ $('#secFile').hidden = true; openPath=''; applyLayout(); markOpenFile() };
+// lượt đang chạy: câu trả lời đã xong cộng với phần agent đang viết dở
+const liveText = (m)=> m.running && m.draft ? (m.text ? m.text+'\n\n' : '') + m.draft : m.text;
 function msgHtml(m){
   const time = new Date(m.ts).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'});
   if(m.role==='you') return `<div class="msg you" title="${esc(time)}">${esc(m.text)}${filesHtml(m)}</div>`;
   if(m.role==='system') return `<div class="msg system">${esc(m.text)} · ${esc(time)}</div>`;
   const who = (win==='lead'?'👑 Lead':'🛠 '+win) + (m.agent?' · '+m.agent:'') + ' · ' + time;
-  return `<div class="msg agent"><div class="who" title="${m.usage?esc(`Lượt này: ${fmtTok(usageEq(m.usage))} token quy đổi (mới ${fmtTok(Math.max(0,m.usage.in-(m.usage.cached||0)))}, đọc lại từ bộ nhớ đệm ${fmtTok(m.usage.cached||0)}, trả lời ${fmtTok(m.usage.out)})`+(m.usage.cost?` · $${m.usage.cost.toFixed(3)}`:'')+(m.usage.partial?' · lượt bị dừng, số ước tính':'')):''}">${esc(who)}</div>${stepsHtml(m)}${m.text?md(m.text):''}${m.running&&!m.text?'<span class="typing"><i></i><i></i><i></i></span>':''}${filesHtml(m)}${errHtml(m)}${grantHtml(m)}${m.note?`<div class="hint">${esc(m.note)}</div>`:''}</div>`;
+  return `<div class="msg agent"><div class="who" title="${m.usage?esc(`Lượt này: ${fmtTok(usageEq(m.usage))} token quy đổi (mới ${fmtTok(Math.max(0,m.usage.in-(m.usage.cached||0)))}, đọc lại từ bộ nhớ đệm ${fmtTok(m.usage.cached||0)}, trả lời ${fmtTok(m.usage.out)})`+(m.usage.cost?` · $${m.usage.cost.toFixed(3)}`:'')+(m.usage.partial?' · lượt bị dừng, số ước tính':'')):''}">${esc(who)}</div>${stepsHtml(m)}${liveText(m)?md(liveText(m)):''}${m.running&&!liveText(m)?'<span class="typing"><i></i><i></i><i></i></span>':''}${filesHtml(m)}${errHtml(m)}${grantHtml(m)}${m.note?`<div class="hint">${esc(m.note)}</div>`:''}</div>`;
 }
 // Lỗi của agent: câu giải thích dễ hiểu và nút xử lý; dòng lỗi gốc nằm trong "Chi tiết"
 const ERR_KINDS = [
@@ -1381,7 +1409,7 @@ $('#chatlog').addEventListener('click',async e=>{
   b.disabled=true;
   try{await api('POST',`/api/chat/${encodeURIComponent(win)}/grant`,{msgId:b.dataset.grant}); chatSig=''; refreshChat()}catch(x){toast(x.message,'err'); b.disabled=false}
 });
-let chatSig = '';
+let chatSig = '', chatFast = 0;
 async function refreshChat(){
   const asked = win+'|'+proj;
   try{
@@ -1403,6 +1431,8 @@ async function refreshChat(){
     $('#quick').hidden=true; $('#btnTurnStop').disabled = !j.busy; $('#btnStopNow').hidden = !j.busy;
     const g = (state?.chat?.agents.find(a=>a.name===win)?.grants)||[];
     $('#btnRevoke').hidden = !g.length; $('#grantList').textContent = g.length ? 'Quyền đã cấp thêm: '+g.join(', ') : '';
+    // agent đang làm thì hỏi lại nhanh hơn, để chữ hiện dần
+    clearTimeout(chatFast); if(j.busy && chatOn()) chatFast = setTimeout(refreshChat, 500);
   }catch(e){ $('#chatlog').innerHTML = `<div class="chatempty">${esc(e.message)}</div>`; chatSig='' }
 }
 $('#btnRevoke').onclick = async()=>{ if(!confirm('Thu hồi mọi quyền đã cấp thêm cho agent này?')) return; try{await api('POST',`/api/chat/${encodeURIComponent(win)}/revoke`); await refreshState(); chatSig=''; refreshChat()}catch(e){toast(e.message,'err')} };

@@ -49,6 +49,8 @@ Nâng cấp chính Agent-Squad bằng agent: chọn project Agent-Squad trên da
   - **Tự làm mới cuộc trò chuyện**: khi cuộc trò chuyện của một agent Claude vượt ngưỡng (mặc định 120k token, chỉnh hoặc tắt trong tab)
     và có việc mới (bạn nhắn hoặc nhận task), agent ghi ghi chú rồi làm việc đó trong cuộc trò chuyện mới. Codex / Gemini chưa đo được độ dài.
   - context-mode không phải bộ nhớ: nó chỉ giữ dữ liệu lớn ở ngoài cuộc trò chuyện.
+- Khung chat (kiểu Chat): câu trả lời của agent Claude hiện dần từng đoạn khi agent đang viết (Codex / Gemini hiện khi xong đoạn).
+  Bấm vào thẻ file trong chat để mở file ở cột phải; nút "Thay đổi" cho xem dòng nào được thêm (xanh), bỏ (đỏ) so với lần lưu git gần nhất.
 - Kiểu hiển thị (trong "⚙ Cài đặt" > "Cách làm việc"):
   - **💬 Chat** (mặc định, `dashboard/chat.js`): agent chạy ẩn (`claude -p`, `codex exec`, `gemini -p`), dashboard hiện
     tin nhắn dạng chat với các bước làm thu gọn được. Lead giao việc bằng `Status: ready`, dashboard tự chạy worker
