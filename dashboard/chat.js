@@ -932,7 +932,7 @@ module.exports = function setupChat({ on, send, readBody, getCtx, loadProjects, 
     const ctx = getCtx(url);
     const b = await readBody(req);
     const st = loadState(ctx);
-    if (!st.active) return send(res, 400, { error: 'Chỉ thêm được agent khi đang chạy kiểu Chat. Ở kiểu Terminal hãy thêm trong "Chọn agent & model" rồi Start lại.' });
+    if (!st.active) return send(res, 400, { error: 'Chỉ thêm được agent khi đang chạy kiểu Chat. Ở kiểu Terminal hãy thêm worker trong Cài đặt, tab "Đội agent", rồi Start lại.' });
     const name = String(b.name || '');
     const parent = String(b.parent || 'lead');
     if (!WORKER_RE.test(name) || name === 'lead' || name === 'watch') return send(res, 400, { error: 'Tên chỉ gồm chữ, số, dấu - và _ (tối đa 30 ký tự).' });
