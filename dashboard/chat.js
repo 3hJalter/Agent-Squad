@@ -168,6 +168,7 @@ const noLink = (a) => a?.agent === 'codex';
 const gitByDashboard = (ctx, name, a) => ctx.kind !== 'office' && name !== 'lead' && a?.agent === 'codex';
 
 module.exports = function setupChat({ on, send, readBody, getCtx, loadProjects, loadAccounts, withCtx, run }) {
+  let noPartial = false; // bản Claude Code cũ không có --include-partial-messages: tắt chữ hiện dần
   const live = new Map(); // key root|name -> { child, msg, queue: [] }
   const cache = new Map(); // key root|name -> messages[]
 
@@ -309,7 +310,7 @@ module.exports = function setupChat({ on, send, readBody, getCtx, loadProjects, 
     const tools = grants.filter((g) => g !== 'network');
     const extraDir = path.join(ctx.root, '.agents');
     if (a.agent === 'claude') {
-      const args = ['-p', '--output-format', 'stream-json', '--verbose', '--permission-mode', 'acceptEdits',
+      const args = ['-p', '--output-format', 'stream-json', '--verbose', ...(noPartial ? [] : ['--include-partial-messages']), '--permission-mode', 'acceptEdits',
         '--allowedTools', ...CLAUDE_TOOLS, ...tools, ...(useCm(ctx, a) ? ['mcp__' + CM_SERVER] : []),
         ...(useCm(ctx, a) ? ['--mcp-config', CM_MCP] : []), '--add-dir', extraDir, ...resDirs(ctx),
         '--append-system-prompt', sysPrompt(ctx, name, a, extraDir)];
@@ -390,6 +391,14 @@ module.exports = function setupChat({ on, send, readBody, getCtx, loadProjects, 
           const m = (ev.mcp_servers || []).find((x) => x.name === CM_SERVER);
           if (!m || m.status !== 'connected') steps.push({ icon: '⚠️', error: true, title: 'context-mode không chạy được (cần Node.js 22.5 trở lên, và có mạng ở lần chạy đầu để tải về). Agent vẫn làm việc bình thường, chỉ là không có context-mode.' });
         }
+        // chữ hiện dần: phần đang viết nằm ở msg.draft, tới khi nhận được đoạn hoàn chỉnh thì bỏ
+        if (ev.type === 'stream_event' && !ev.parent_tool_use_id) {
+          const e = ev.event || {};
+          if (e.type === 'message_start') msg.draft = '';
+          if (e.type === 'content_block_delta' && e.delta?.type === 'text_delta' && typeof e.delta.text === 'string') msg.draft = ((msg.draft || '') + e.delta.text).slice(-20000);
+          return;
+        }
+        if (ev.type === 'assistant' && !ev.parent_tool_use_id) delete msg.draft;
         if (ev.type === 'assistant') for (const c of ev.message?.content || []) {
           if (c.type === 'text' && c.text.trim()) msg.text += (msg.text ? '\n\n' : '') + c.text.trim();
           if (c.type === 'tool_use') { stash(); const s = toolStep(c.name, c.input); byId.set(c.id, s); steps.push(s); }
@@ -593,12 +602,15 @@ module.exports = function setupChat({ on, send, readBody, getCtx, loadProjects, 
     child.on('close', (code, signal) => {
       clearTimeout(timer);
       if (buf.trim().startsWith('{')) { try { parse(JSON.parse(buf.trim())); } catch { /* bỏ */ } }
+      if (!L.stopped && code && /unknown option.*include-partial-messages/i.test(errTail)) {
+        noPartial = true; msg.error = 'Bản Claude Code trong WSL chưa hỗ trợ hiện chữ dần nên dashboard đã tắt tính năng này. Bạn nhắn lại là được.';
+      }
       if (L.stopped) msg.note = 'Bạn đã dừng lượt này.';
       else if (code && !msg.error) msg.error = short(errTail.trim() || `Agent thoát với mã ${code}${signal ? ' (' + signal + ')' : ''}`, 800);
       finish();
     });
     async function finish() {
-      delete msg.running; L.child = null; L.msg = null; L.stopped = false;
+      delete msg.running; delete msg.draft; L.child = null; L.msg = null; L.stopped = false;
       if (!msg.text && !msg.error && !msg.steps.length) msg.text = '(không có trả lời)';
       try { const fl = filesOf(ctx, a, msg); if (fl.length) msg.files = fl; } catch { /* không bắt buộc */ }
       let after = null; // việc làm sau khi tin nhắn của lượt này đã được ghi vào chat
