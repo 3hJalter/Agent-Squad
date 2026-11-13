@@ -217,6 +217,23 @@ main>section:first-child>h2{border:0;padding:6px 12px}
 .setrow>button{text-align:left;padding:8px 12px;font-size:13.5px}
 .sethead{font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);margin-top:6px}
 @media (max-width:900px){#app{grid-template-columns:1fr;height:auto}#side{border-right:0;border-bottom:1px solid var(--line)}#content{height:auto;min-height:100vh}.setrow{grid-template-columns:1fr}}
+main.filemode{grid-template-columns:minmax(0,1fr) 14px var(--taskW,330px)}
+main.filemode #secTasks{display:none}
+main.filemode #split{display:block}
+#secFile{overflow:hidden}
+#secFile .ftitle{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
+#secFile #dfBody{flex:1;max-height:none;overflow:auto;padding:12px}
+#secFile #dfNote{padding:6px 12px;border-top:1px solid var(--line);word-break:break-all}
+#dfBody .doc{line-height:1.55}
+#dfBody .doc pre{white-space:pre-wrap}
+.steps li details summary{color:inherit;font-size:12px;list-style:none;cursor:pointer}
+.steps li details summary::after{content:' ›';opacity:.6}
+.steps li details[open] summary::after{content:' ⌄'}
+.steps>summary{padding:2px 0}
+.filecard{border:1px solid var(--line);background:var(--panel);padding:6px 10px}
+.filecard.sel{border-color:var(--accent)}
+.atts{align-items:flex-start}
+@media (max-width:900px){main.filemode{grid-template-columns:1fr}main.filemode #split{display:none}}
 </style>
 </head>
 <body>
@@ -266,6 +283,10 @@ main>section:first-child>h2{border:0;padding:6px 12px}
   <section id="secTasks">
     <h2>Tasks <button id="btnHideTasks" class="small" title="Ẩn khung task để chat rộng hơn">✕</button><select id="catSel" hidden title="Lọc theo nhóm (Category)"></select><span class="spacer"></span><button id="btnCleanup" class="small" hidden title="Chuyển các task đã xong vào thư mục lưu trữ">🧹 Dọn</button><button id="btnNew" class="primary small">+ Việc mới</button></h2>
     <div class="board" id="board"></div>
+  </section>
+  <section id="secFile" hidden>
+    <h2><span id="dfTitle" class="ftitle"></span><span class="spacer"></span><a id="dfDl" class="btn" download>⬇ Tải về</a><button id="dfClose" class="small" title="Đóng khung xem file">✕</button></h2>
+    <div id="dfBody"></div><span class="hint" id="dfNote"></span>
   </section>
 </main>
 </div>
@@ -410,11 +431,6 @@ main>section:first-child>h2{border:0;padding:6px 12px}
       <span class="hint">Muốn thêm một file thì gõ đường dẫn của nó vào ô trên (nút Duyệt chỉ chọn thư mục).</span>
     </div>
   </div>
-</dialog>
-
-<dialog id="dlgFile">
-  <div class="dlg-h"><h3 id="dfTitle"></h3><a id="dfDl" class="btn" download>⬇ Tải về</a><button id="dfClose" class="small">Đóng</button></div>
-  <div class="dlg-b"><div id="dfBody"></div><span class="hint" id="dfNote"></span></div>
 </dialog>
 
 <dialog id="dlgAgents">
@@ -668,10 +684,12 @@ function fillWorkers(sel, pick){sel.innerHTML = workers().map(w=>`<option${w===p
 const DEF_W = 330;
 function applyLayout(){
   const m = document.querySelector('main'), hidden = localGet('layout')==='hidden';
-  m.classList.toggle('notasks', hidden); $('#btnShowTasks').hidden = !hidden;
-  let w = +(localGet('split.'+proj) || localGet('split') || (localGet('layout')==='wide' ? Math.round(window.innerWidth*0.45) : DEF_W));
+  const fm = !$('#secFile').hidden; m.classList.toggle('filemode', fm);
+  m.classList.toggle('notasks', hidden && !fm); $('#btnShowTasks').hidden = !hidden || fm;
+  let w = fm ? +(localGet('fileW') || Math.round(m.clientWidth*0.46))
+    : +(localGet('split.'+proj) || localGet('split') || (localGet('layout')==='wide' ? Math.round(window.innerWidth*0.45) : DEF_W));
   w = Math.max(220, Math.min(w, Math.max(220, m.clientWidth - 30 - 380)));
-  m.style.setProperty('--taskW', w+'px'); m.classList.toggle('wide', w>=620);
+  m.style.setProperty('--taskW', w+'px'); m.classList.toggle('wide', !fm && w>=620);
   const h = Math.max(38, Math.min(+(localGet('msgH')||38), Math.round(window.innerHeight*0.6)));
   $('#msg').style.height = h+'px';
 }
@@ -683,8 +701,8 @@ function dragger(el, onMove){
     el.addEventListener('pointermove',mv); el.addEventListener('pointerup',up); el.addEventListener('pointercancel',up);
   });
 }
-dragger($('#split'), e=>{ const r = document.querySelector('main').getBoundingClientRect(); localSet('split.'+proj, Math.round(r.right - e.clientX - 12 - 7)); applyLayout() });
-$('#split').ondblclick = ()=>{ localSet('split.'+proj, DEF_W); applyLayout() };
+dragger($('#split'), e=>{ const r = document.querySelector('main').getBoundingClientRect(); localSet($('#secFile').hidden ? 'split.'+proj : 'fileW', Math.round(r.right - e.clientX - 12 - 7)); applyLayout() });
+$('#split').ondblclick = ()=>{ if($('#secFile').hidden) localSet('split.'+proj, DEF_W); else localSet('fileW', ''); applyLayout() };
 dragger($('#hsplit'), e=>{ const r = $('#msg').getBoundingClientRect(); localSet('msgH', Math.round(r.bottom - e.clientY - 6)); applyLayout() });
 $('#hsplit').ondblclick = ()=>{ localSet('msgH', 38); applyLayout() };
 window.addEventListener('resize', applyLayout);
@@ -1097,8 +1115,13 @@ function md(src){
 function stepsHtml(m){
   const st = m.steps||[]; if(!st.length) return '';
   const denied = st.filter(s=>s.denied).length, errs = st.filter(s=>s.error&&!s.denied).length;
-  const label = m.running ? `Đang làm… (${st.length} bước)` : `${st.length} bước đã làm` + (errs?` · ${errs} lỗi`:'') + (denied?` · ${denied} bị chặn`:'');
-  return `<details class="steps"${m.running?' open':''}><summary>${esc(label)}</summary><ol>${st.slice(-80).map(s=>`<li class="${s.error?'err':''}"><span>${esc(s.icon||'•')}</span><span>${esc(s.title||'')}${s.denied?' — bị chặn, cần bạn cho phép':''}</span>${s.detail?`<pre>${esc(s.detail)}</pre>`:''}</li>`).join('')}</ol></details>`;
+  const edited = new Set(st.flatMap(s=>/^(✏️|📝)$/.test(s.icon||'') ? [s.file, ...(s.files||[])].filter(Boolean) : [])).size;
+  const last = st[st.length-1];
+  const label = m.running ? `${last.title||'Đang làm'}… (bước ${st.length})` : `Đã làm ${st.length} bước` + (edited?` · sửa ${edited} file`:'') + (errs?` · ${errs} lỗi`:'') + (denied?` · ${denied} bị chặn`:'');
+  const base = (t)=> String(t||'').replace(/^(Sửa|Ghi|Đọc) (.*\/)([^/]+)$/, '$1 $3');
+  return `<details class="steps"><summary>${esc(label)}</summary><ol>${st.slice(-80).map(s=>`<li class="${s.error?'err':''}"><span>${esc(s.icon||'•')}</span>${s.detail
+    ? `<details${s.error?' open':''}><summary title="${esc(s.title||'')}">${esc(base(s.title))}${s.denied?' — bị chặn, cần bạn cho phép':''}</summary><pre>${esc(s.detail)}</pre></details>`
+    : `<span title="${esc(s.title||'')}">${esc(base(s.title))}${s.denied?' — bị chặn, cần bạn cho phép':''}</span>`}</li>`).join('')}</ol></details>`;
 }
 const fileUrl = (p, q='')=> withP('/api/file?path='+encodeURIComponent(p)+q);
 const fmtSize = (n)=> n>=1048576 ? (n/1048576).toFixed(1)+' MB' : n>=1024 ? Math.round(n/1024)+' KB' : n+' B';
@@ -1108,18 +1131,24 @@ function filesHtml(m){
   return '<div class="atts">' + fl.filter(f=>f.kind==='image').map(f=>`<img ${attr(f)} loading="lazy" src="${esc(fileUrl(f.path))}" alt="${esc(f.name)}" title="${esc(f.name)} (bấm để xem lớn)">`).join('')
     + fl.filter(f=>f.kind!=='image').map(f=>`<button class="filecard" ${attr(f)} title="${esc(f.path)}">📄 <b>${esc(f.name)}</b><span class="hint">${fmtSize(f.size||0)}${f.edited?' · vừa sửa':''}</span></button>`).join('') + '</div>';
 }
+// file mở ở cột phải (thay chỗ Tasks), giống khung Artifacts của Claude
+let openPath = '';
 async function openFile(path, name, kind){
-  $('#dfTitle').textContent = name; $('#dfDl').href = fileUrl(path,'&dl=1'); $('#dfDl').setAttribute('download', name); $('#dfNote').textContent = path;
+  openPath = path;
+  $('#dfTitle').textContent = name; $('#dfTitle').title = path; $('#dfDl').href = fileUrl(path,'&dl=1'); $('#dfDl').setAttribute('download', name); $('#dfNote').textContent = path;
   const body = $('#dfBody'); body.innerHTML = '<span class="hint">Đang mở…</span>';
-  if(!$('#dlgFile').open) $('#dlgFile').showModal();
+  $('#secFile').hidden = false; applyLayout(); markOpenFile();
   if(kind==='image'){ body.innerHTML = `<img src="${esc(fileUrl(path))}" alt="${esc(name)}">`; return }
   try{
-    const j = await api('GET','/api/file?path='+encodeURIComponent(path)+'&text=1');
+    const j = await api('GET','/api/file?path='+encodeURIComponent(path)+'&text=1'); if(openPath!==path) return;
     if(j.binary) body.innerHTML = '<span class="hint">File này không phải dạng chữ nên không xem trước được. Bấm "Tải về" để mở bằng ứng dụng trên máy.</span>';
-    else { body.innerHTML = '<pre></pre>'; body.firstChild.textContent = j.text; if(j.truncated) $('#dfNote').textContent = path + ' · file dài, chỉ hiện phần đầu. Bấm "Tải về" để xem đủ.' }
+    else if(/\.(md|markdown)$/i.test(name)) body.innerHTML = `<div class="doc msg agent">${md(j.text)}</div>`;
+    else { body.innerHTML = '<pre></pre>'; body.firstChild.textContent = j.text }
+    if(j.truncated) $('#dfNote').textContent = path + ' · file dài, chỉ hiện phần đầu. Bấm "Tải về" để xem đủ.';
   }catch(e){ body.innerHTML = `<span class="hint">${esc(e.message)}</span>` }
 }
-$('#dfClose').onclick = ()=>$('#dlgFile').close();
+function markOpenFile(){ for(const el of document.querySelectorAll('#chatlog .filecard')) el.classList.toggle('sel', !$('#secFile').hidden && el.dataset.file===openPath) }
+$('#dfClose').onclick = ()=>{ $('#secFile').hidden = true; openPath=''; applyLayout(); markOpenFile() };
 function msgHtml(m){
   const time = new Date(m.ts).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'});
   if(m.role==='you') return `<div class="msg you" title="${esc(time)}">${esc(m.text)}${filesHtml(m)}</div>`;
@@ -1157,6 +1186,7 @@ async function refreshChat(){
       box.innerHTML = j.messages.length ? j.messages.map(m=>`<div data-id="${esc(m.id)}" style="display:contents">${msgHtml(m)}</div>`).join('')
         : `<div class="chatempty"><b>${win==='lead'?'Chào bạn 👋':'Worker '+esc(win)}</b>${win==='lead'?'Hãy nhắn cho Lead bạn muốn làm gì. Lead sẽ chia việc thành task nhỏ, giao cho worker và báo lại kết quả ở đây.':'Worker nhận việc từ Lead. Khi có task, các bước làm sẽ hiện ở đây. Bạn cũng có thể nhắn trực tiếp.'}</div>`;
       for(const id of open){ const d = box.querySelector(`[data-id="${CSS.escape(id)}"] details.steps`); if(d) d.open = true }
+      markOpenFile();
       if($('#follow').checked && (atBottom || firstPaint)) box.scrollTop = box.scrollHeight;
     }
     const st=$('#agentStatus'); st.hidden=false; st.className='pill'+(j.busy?' busy':'');

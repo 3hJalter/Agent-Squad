@@ -72,6 +72,30 @@ function cmdLabel(pre) {
   if (m) return CMD_NAMES['git ' + m[1]] || `git ${m[1]} kèm tuỳ chọn riêng`;
   return CMD_NAMES[pre] || `lệnh "${pre}"`;
 }
+// Mô tả một câu lệnh bằng lời cho người không rành kỹ thuật (câu lệnh thật vẫn nằm trong phần chi tiết của bước).
+const CMD_SAY = [
+  [/^(ls|find|cat|head|tail|wc|stat|pwd|test)$/, 'Xem file và thư mục'], [/^(grep|rg)$/, 'Tìm trong nội dung file'],
+  [/^git (status|diff|log|show|branch|rev-parse|ls-files|remote)$/, 'Xem tình trạng git'], [/^git (add|commit)$/, 'Lưu thay đổi vào git (commit)'],
+  [/^git push$/, 'Đẩy code lên máy chủ'], [/^git (pull|fetch|merge|rebase|cherry-pick)$/, 'Lấy và gộp code'], [/^git /, 'Thao tác git'],
+  [/^(npm test|npm run|pytest|bash -n|shellcheck|dotnet)$/, 'Chạy kiểm tra'], [/^(python3?|node|bash|sh)$/, 'Chạy script'],
+  [/^(npm install|npm i|pip3?|npx)$/, 'Cài thư viện'], [/^(mkdir|cp|mv|touch|rm)$/, 'Sắp xếp file'], [/^(sed|awk|jq|tr|cut|sort|uniq)$/, 'Xử lý nội dung file'],
+  [/^(curl|wget)$/, 'Tải dữ liệu từ mạng'], [/^which$/, 'Kiểm tra chương trình đã cài'],
+];
+function sayCmd(cmd) {
+  let best = '';
+  for (const part of bareShell(cmd).split(/&&|\|\||;|\||\n/)) {
+    const w = part.trim().split(/\s+/).filter(Boolean);
+    while (w.length && (SH_WORDS.has(w[0]) || /^[A-Za-z_]\w*=/.test(w[0]))) w.shift();
+    if (w[0] === 'git') while (w[1] === '-C' || w[1] === '-c') w.splice(1, 2);
+    if (!w.length || w[0] === 'cd' || w[0] === 'echo' || w[0] === 'printf' || !/^[A-Za-z0-9._/-]+$/.test(w[0])) continue;
+    const two = `${w[0]} ${w[1] || ''}`.trim();
+    const hit = CMD_SAY.find(([re]) => re.test(two)) || CMD_SAY.find(([re]) => re.test(w[0]));
+    const say = hit ? hit[1] : `Chạy lệnh ${w[0].split('/').pop()}`;
+    if (!best || /^Xem /.test(best)) best = say; // ưu tiên việc "làm" hơn việc "xem"
+    if (!/^Xem /.test(best)) break;
+  }
+  return best || 'Chạy lệnh';
+}
 const SHELL_NOTE = ' SHELL COMMANDS: commands are checked one by one against an allow-list, so keep them simple: plain commands joined with && only. ' +
   'No shell variables, no $(...), no heredocs, no `git -c` or `git -C` (use `cd <dir> && git ...`; the git author name and email are already set for you). ' +
   'To run a script, write it to a file with your file tool, then run the file. If a command is blocked, do not retry it in another shape: say what you need in one plain sentence.';
@@ -305,7 +329,7 @@ module.exports = function setupChat({ on, send, readBody, getCtx, loadProjects, 
   function toolStep(name, input = {}) {
     const n = String(name || '');
     const file = input.file_path || input.path || input.absolute_path || '';
-    if (/^(Bash|run_shell_command|shell)$/i.test(n)) return { icon: '▶', title: 'Chạy lệnh', detail: short(input.command, 400) };
+    if (/^(Bash|run_shell_command|shell)$/i.test(n)) return { icon: '▶', title: sayCmd(input.command), detail: short(input.command, 400) };
     if (/^(Edit|MultiEdit|replace)$/i.test(n)) return { icon: '✏️', title: 'Sửa ' + file, file };
     if (/^(Write|write_file)$/i.test(n)) return { icon: '📝', title: 'Ghi ' + file, file };
     if (/^(Read|read_file|read_many_files)$/i.test(n)) return { icon: '📖', title: 'Đọc ' + (file || (input.paths || []).join(', ')) };
@@ -383,7 +407,7 @@ module.exports = function setupChat({ on, send, readBody, getCtx, loadProjects, 
           let s = byId.get(it.id);
           if (it.type === 'agent_message' && ev.type === 'item.completed' && it.text) msg.text += (msg.text ? '\n\n' : '') + it.text.trim();
           if (it.type === 'command_execution') {
-            if (!s) { stash(); s = { icon: '▶', title: 'Chạy lệnh', detail: short(it.command, 400) }; byId.set(it.id, s); steps.push(s); }
+            if (!s) { stash(); s = { icon: '▶', title: sayCmd(it.command), detail: short(it.command, 400) }; byId.set(it.id, s); steps.push(s); }
             if (ev.type === 'item.completed' && it.exit_code) {
               s.error = true; s.detail = short(`${it.command}\n${it.aggregated_output || ''}`);
               if (/network|resolve host|could not resolve|connection (refused|reset)|timed out|ENOTFOUND|EAI_AGAIN|sandbox|operation not permitted/i.test(it.aggregated_output || '')) {
@@ -584,8 +608,13 @@ module.exports = function setupChat({ on, send, readBody, getCtx, loadProjects, 
     const re = /`([^`\n]{1,300})`|\]\(([^)\s]{1,300})\)|((?:[\w.@~-]+\/|\/)*[\w.@-]+\.[A-Za-z0-9]{1,8})/g;
     let m;
     while ((m = re.exec(msg.text || '')) && cands.length < 60) cands.push((m[1] || m[2] || m[3]).trim().replace(/^file:\/\//, '').replace(/[:#]L?\d+([-:]\d+)?$/, ''));
-    for (const c of cands) if (/\.[A-Za-z0-9]{1,8}$/.test(c) && !/^https?:/i.test(c)) add(c, false);
-    for (const s of msg.steps || []) for (const f of [s.file, ...(s.files || [])]) if (f) add(f, true);
+    const stepFiles = (msg.steps || []).flatMap((s) => [s.file, ...(s.files || [])]).filter(Boolean);
+    const dirs = [...new Set(stepFiles.map((f) => path.dirname(path.resolve(a.cwd || ctx.root, f))))].slice(0, 8);
+    for (const c of cands) if (/\.[A-Za-z0-9]{1,8}$/.test(c) && !/^https?:/i.test(c)) {
+      const n = out.length; add(c, false);
+      if (out.length === n && !c.includes('/')) for (const d of dirs) { add(path.join(d, c), false); if (out.length > n) break; }
+    }
+    for (const f of stepFiles) add(f, true);
     return out;
   }
 

@@ -29,6 +29,8 @@ Nâng cấp chính Agent-Squad bằng agent: chọn project Agent-Squad trên da
   `~/.agent-squad/projects.json` (xoá khỏi danh sách không xoá file). Dashboard tự tạo file khung nếu repo chưa có.
 - Bố cục: cột trái là project và danh sách agent (bấm để mở chat), giữa là chat, cột phải là Tasks. Mọi mục cài đặt
   ("Agent & model", "Cây phân cấp", "Tài khoản", "Tài nguyên", "Token", thông báo, cập nhật) nằm trong nút **⚙ Cài đặt** ở góc dưới cột trái.
+- Trong chat: các bước agent làm gom thành một dòng ("Đã làm 6 bước · sửa 2 file"), mỗi bước ghi bằng lời, bấm vào mới thấy câu lệnh.
+  Ảnh hiện thẳng trong chat; bấm ảnh hoặc thẻ file thì mở ở cột phải (file `.md` hiện dạng tài liệu), bấm ✕ để quay lại Tasks.
 - Kiểu hiển thị (trong "⚙ Cài đặt" > "Agent & model"):
   - **💬 Chat** (mặc định, `dashboard/chat.js`): agent chạy ẩn (`claude -p`, `codex exec`, `gemini -p`), dashboard hiện
     tin nhắn dạng chat với các bước làm thu gọn được. Lead giao việc bằng `Status: ready`, dashboard tự chạy worker
