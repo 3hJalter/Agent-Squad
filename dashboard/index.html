@@ -4,11 +4,14 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Agent-Squad</title>
+<script>try{var t=localStorage.getItem('squad.theme'); if(t==='dark'||t==='light') document.documentElement.dataset.theme=t}catch(e){}</script>
 <style>
 :root{--bg:#faf9f5;--panel:#fff;--side:#f3f1ea;--line:#e3dfd3;--text:#29261f;--muted:#73706a;--accent:#c96442;--accent-text:#fff;--bubble:#efece3;
   --todo:#9a968c;--prog:#3b78d8;--blocked:#c8452f;--done:#3a9160;--term:#1f1e1b;--term-text:#e6e2d8}
-@media (prefers-color-scheme:dark){:root{--bg:#262624;--panel:#30302e;--side:#1f1e1d;--line:#45443f;--text:#ece9e1;--muted:#a6a39a;--bubble:#3a3936;
+@media (prefers-color-scheme:dark){:root:not([data-theme=light]){--bg:#262624;--panel:#30302e;--side:#1f1e1d;--line:#45443f;--text:#ece9e1;--muted:#a6a39a;--bubble:#3a3936;
   --accent:#d97757;--prog:#6ea0ee;--term:#191918;--term-text:#dcd8ce}}
+:root[data-theme=dark]{--bg:#262624;--panel:#30302e;--side:#1f1e1d;--line:#45443f;--text:#ece9e1;--muted:#a6a39a;--bubble:#3a3936;
+  --accent:#d97757;--prog:#6ea0ee;--term:#191918;--term-text:#dcd8ce}
 *{box-sizing:border-box}
 [hidden]{display:none!important}
 body{margin:0;background:var(--bg);color:var(--text);font:14px/1.45 system-ui,-apple-system,"Segoe UI",sans-serif}
@@ -54,7 +57,7 @@ section>h2{font-size:14px;margin:0;padding:10px 12px;border-bottom:1px solid var
 .card:hover{border-color:var(--accent)}
 .card .id{font-size:11px;color:var(--muted)}
 .card .t{font-weight:600;word-break:break-word}
-.card .o{font-size:12px;color:var(--muted)}
+.card .o{font-size:12px;color:var(--muted);display:flex;gap:6px}.card .o .tk{margin-left:auto}
 .cat{margin-bottom:6px}
 .cat>summary{font-size:12px;color:var(--muted);cursor:pointer;margin-bottom:5px;list-style:none;user-select:none}
 .cat>summary::before{content:'▾ '}
@@ -113,6 +116,26 @@ code{font:12px ui-monospace,Consolas,monospace}
 .termwrap .term{flex:1}
 pre.diff span{display:block}pre.diff .da{background:#e3f1e0;color:#1d5a2a}pre.diff .dd{background:#f8e1dc;color:#8a2a1c}pre.diff .dh{color:var(--muted);text-align:center}
 #dfMode button{font-size:12px;padding:2px 8px}
+.msg .undo{margin-top:6px}.msg .undo button{color:var(--muted);font-size:12px}
+.hcrow{display:grid;grid-template-columns:22px minmax(0,1fr) auto;gap:8px;align-items:start;padding:6px 8px;border:1px solid var(--line);border-radius:8px;background:var(--panel)}
+.teamview{position:absolute;inset:0;overflow:auto;background:var(--bg);color:var(--text);padding:14px;display:flex;flex-direction:column;gap:10px;z-index:2}
+.teamview[hidden]{display:none}
+.tvsum{display:flex;gap:6px;flex-wrap:wrap}
+.tvgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:10px}
+.tvcard{border:1px solid var(--line);border-radius:10px;background:var(--panel);padding:10px 12px;display:grid;gap:6px;cursor:pointer;text-align:left;color:var(--text);font:inherit}
+.tvcard:hover{border-color:var(--accent)}
+.tvcard.wants{border-color:var(--blocked)}
+.tvcard .last{color:var(--muted);font-size:12px;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden;overflow-wrap:anywhere}
+section.teamon .sendbar,section.teamon .suggest,section.teamon .quick,section.teamon #hsplit,section.teamon #agentStatus,section.teamon #btnClearChat,section.teamon #btnSearch,section.teamon #chatSearch{display:none}
+#btnTeam{margin:0 0 6px;width:100%;text-align:left}
+#btnTeam.sel{background:var(--panel);color:var(--text);box-shadow:0 0 0 1px var(--line);font-weight:600}
+.chatsearch{display:grid;gap:6px;padding:8px 10px;border:1px solid var(--line);border-radius:10px;background:var(--panel);margin-bottom:8px}
+.chatsearch[hidden]{display:none}
+.csres{display:grid;gap:4px;max-height:220px;overflow:auto}
+.cshit{border:0;border-top:1px solid var(--line);background:none;color:var(--text);text-align:left;padding:5px 2px;font:inherit;font-size:13px;cursor:pointer;overflow-wrap:anywhere}
+.cshit:hover{background:var(--bubble)}
+.cshit mark{background:var(--accent);color:var(--accent-text);border-radius:3px;padding:0 2px}
+.msg.flash{outline:2px solid var(--accent);outline-offset:3px;border-radius:8px}
 .starthint{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;background:var(--bg);color:var(--text);text-align:center;padding:16px}
 .starthint button{font-size:14px;padding:8px 16px}
 .shteam{display:flex;gap:6px;flex-wrap:wrap;justify-content:center;max-width:620px}
@@ -265,6 +288,7 @@ dialog.pane>.dlg-h>button[id$="Close"]{display:none}
   <div class="sideproj"><select id="projSel" title="Project đang điều khiển"></select><button id="btnProj" class="small" title="Thêm / quản lý project">+</button></div>
   <span class="pill"><span id="sdot" class="dot"></span><span id="stext">đang tải…</span></span>
   <div class="sidehead">Agents</div>
+  <button id="btnTeam" class="tab small" hidden title="Xem cả đội: ai đang làm gì, ai đang chờ bạn">👥 Cả đội</button>
   <nav class="tabs" id="tabs"></nav>
   <div class="sidefoot">
     <div class="row"><button id="btnStart" class="primary">▶ Start</button><button id="btnStop" class="danger">Stop</button></div>
@@ -276,11 +300,13 @@ dialog.pane>.dlg-h>button[id$="Close"]{display:none}
 
 <main>
   <section>
-    <h2><span id="chatTitle"></span><span class="hint" id="chatSub"></span><span class="spacer"></span><button id="btnShowTasks" class="small" hidden title="Hiện lại khung task">📋 Tasks<span class="n" id="taskCount"></span></button><span id="agentStatus" class="pill"></span><button id="btnClearChat" class="small" title="Bắt đầu cuộc trò chuyện mới với agent đang chọn">🆕 Cuộc trò chuyện mới</button></h2>
+    <h2><span id="chatTitle"></span><span class="hint" id="chatSub"></span><span class="spacer"></span><button id="btnShowTasks" class="small" hidden title="Hiện lại khung task">📋 Tasks<span class="n" id="taskCount"></span></button><span id="agentStatus" class="pill"></span><button id="btnSearch" class="small" title="Tìm trong toàn bộ lịch sử chat với agent đang chọn">🔍</button><button id="btnClearChat" class="small" title="Bắt đầu cuộc trò chuyện mới với agent đang chọn">🆕 Cuộc trò chuyện mới</button></h2>
+    <div class="chatsearch" id="chatSearch" hidden><div class="row"><input id="csQ" placeholder="Tìm trong lịch sử chat với agent này…" style="flex:1"><button id="csClose" class="small">Đóng</button></div><span class="hint" id="csInfo"></span><div class="csres" id="csRes"></div></div>
     <div class="reqs" id="reqs" hidden></div>
     <div class="termwrap">
       <pre class="term" id="term"></pre>
       <div class="chatlog" id="chatlog" hidden></div>
+      <div id="teamView" class="teamview" hidden></div>
       <div id="startHint" class="starthint" hidden>
         <h3 style="margin:0;font-size:20px">👋 Bắt đầu thôi</h3>
         <p id="shLead" style="margin:0;max-width:520px"></p>
@@ -363,9 +389,14 @@ dialog.pane>.dlg-h>button[id$="Close"]{display:none}
   <div class="dlg-h"><h3>🖥 Hệ thống</h3></div>
   <div class="dlg-b setlist">
     <div class="setrow"><button id="btnNotify"></button><span class="hint">Báo bằng tiếng và thông báo trình duyệt khi agent xong, bị chặn hoặc cần bạn.</span></div>
+    <div class="setrow"><label style="color:var(--text);display:flex;gap:6px;align-items:center">Giao diện <select id="themeSel"><option value="">Theo máy</option><option value="light">Sáng</option><option value="dark">Tối</option></select></label><span class="hint">Nền sáng hoặc nền tối. "Theo máy" dùng đúng cài đặt của Windows.</span></div>
     <div class="setrow"><label style="color:var(--text);display:flex;gap:6px;align-items:center"><input type="checkbox" id="follow" checked> Tự cuộn xuống cuối</label><span class="hint">Khi có tin mới, khung chat tự cuộn xuống dưới cùng.</span></div>
     <div class="setrow"><label style="color:var(--text);display:flex;gap:6px;align-items:center"><input type="checkbox" id="showWatch"> Hiện cửa sổ "watch"</label><span class="hint">Nhật ký giao việc, chỉ có ở kiểu Terminal.</span></div>
     <div class="setrow"><button id="btnUpdate">⟳ Cập nhật</button><span class="hint">Tải bản Agent-Squad mới nhất từ GitHub và khởi động lại dashboard.</span></div>
+    <div class="box" id="hcBox"><h4 class="row">🩺 Kiểm tra máy <span class="spacer"></span><button id="hcRun" class="small primary">Kiểm tra</button></h4>
+      <span class="hint">Xem công cụ đã cài và đã đăng nhập chưa. "Thử gọi thật" gửi cho agent một câu rất ngắn (tốn vài token) để chắc chắn agent trả lời được.</span>
+      <div id="hcList" style="display:grid;gap:6px"></div>
+    </div>
     <div class="setrow"><button id="btnRestart">↻ Khởi động lại</button><span class="hint">Khởi động lại dashboard để dùng code mới trên máy.</span></div>
   </div>
 </dialog>
@@ -410,7 +441,7 @@ dialog.pane>.dlg-h>button[id$="Close"]{display:none}
   <div class="dlg-h"><h3>🧭 Cách làm việc <span class="hint" id="cfgProj"></span></h3><button id="cfgClose" class="small">Đóng</button></div>
   <div class="dlg-b">
     <div class="box"><h4>Kiểu hiển thị</h4>
-      <span class="seg"><button id="vmChat">💬 Chat (dễ dùng)</button><button id="vmTerm">🖥 Terminal (như cũ)</button></span>
+      <span class="seg"><button id="vmChat">💬 Chat (dễ dùng)</button><button id="vmTerm">🖥 Terminal (như cũ)</button></span> <button id="vmMore" class="small" title="Hiện thêm kiểu Terminal: xem đúng màn hình terminal của từng agent (cần tmux)">Kiểu khác…</button>
       <p class="hint" style="margin:0" id="vmHint"></p>
     </div>
     <div class="box" id="shareBox"><h4>📂 Thư mục làm việc của agent</h4>
@@ -502,7 +533,7 @@ dialog.pane>.dlg-h>button[id$="Close"]{display:none}
     <div class="box"><h4>Workers (làm từng task)</h4>
       <div class="arow head"><span>Tên</span><span>Agent</span><span>Model</span><span>Effort</span><span></span></div>
       <div id="cfgWorkers" style="display:grid;gap:6px"></div>
-      <div class="row"><button id="cfgAdd" class="small">+ Thêm worker</button></div>
+      <div class="row"><button id="cfgAdd" class="small">+ Thêm worker</button><span class="spacer"></span><span class="hint">Điền nhanh:</span><button class="small" data-preset="save" title="Lead chỉ chia việc nên dùng model nhẹ; worker dùng model mặc định với effort thấp">💰 Tiết kiệm</button><button class="small" data-preset="balance" title="Model mặc định, effort vừa">⚖ Cân bằng</button><button class="small" data-preset="strong" title="Model mặc định, effort cao: tốn token hơn, hợp việc khó">💪 Mạnh</button></div>
     </div>
     <p class="hint" style="margin:0">Đặt tên để phân biệt các worker (ví dụ frontend, backend, test); để trống thì tự đặt tên. "mặc định" = để agent tự chọn model. Chọn "Khác…" để gõ tên model không có trong danh sách. Gemini CLI chưa có tuỳ chọn effort. Sau khi Start, bạn vẫn đổi model, tài khoản, cấp trên, thêm hoặc xoá agent ngay tại tab này.</p>
     <div class="row"><span class="spacer"></span><button id="cfgSave">Lưu</button><button id="cfgSaveStart" class="primary">Lưu &amp; Start</button></div>
@@ -708,6 +739,7 @@ function pickViewMode(m){
   cfg.mode = m; localSet('cfg.'+proj, JSON.stringify(cfg)); $('#cfgSummary').textContent = $('#cfgSummary').title = cfgSummaryText();
   toast(isRunning() ? 'Đã đổi kiểu hiển thị. Stop rồi Start lại để áp dụng.' : 'Đã đổi kiểu hiển thị. Áp dụng khi bạn bấm Start.', 'ok');
 }
+$('#vmMore').onclick=()=>{ localSet('showTerm','1'); $('#vmTerm').hidden=false; $('#vmMore').hidden=true };
 $('#vmChat').onclick=()=>pickViewMode('chat'); $('#vmTerm').onclick=()=>pickViewMode('terminal');
 const isOffice = ()=> (state?.project?.kind || projects.find(p=>p.id===proj)?.kind) === 'office';
 function renderCfg(){
@@ -749,9 +781,22 @@ $('#cmToggle').addEventListener('change', async e=>{
   try{ await api('POST','/api/project/settings',{contextMode:want}); toast(want?'Đã bật context-mode. Áp dụng từ lượt nhắn tiếp theo của agent Claude.':'Đã tắt context-mode.','ok'); await refreshState() }
   catch(x){ toast(x.message,'err'); e.target.checked=!want }
 });
-$('#btnCfg').onclick = ()=>{cfg=loadCfg(); $('#vmTerm').hidden = isOffice(); setViewMode(isOffice() ? 'chat' : cfg.mode); renderShare(); $('#cmToggle').checked = !!state?.project?.contextMode; $('#cfgProj').textContent = '· '+($('#projSel').selectedOptions[0]?.textContent||''); $('#dlgCfg').showModal()};
+$('#btnCfg').onclick = ()=>{cfg=loadCfg(); $('#vmTerm').hidden = isOffice() || (cfg.mode!=='terminal' && localGet('showTerm')!=='1'); $('#vmMore').hidden = isOffice() || !$('#vmTerm').hidden; setViewMode(isOffice() ? 'chat' : cfg.mode); renderShare(); $('#cmToggle').checked = !!state?.project?.contextMode; $('#cfgProj').textContent = '· '+($('#projSel').selectedOptions[0]?.textContent||''); $('#dlgCfg').showModal()};
 $('#cfgClose').onclick = ()=>$('#dlgCfg').close();
 $('#cfgAdd').onclick = ()=>{cfg = readCfgForm(); const w={agent:'codex',model:'',effort:''}; w.name = resolveNames([...cfg.workers, w]).pop(); cfg.workers.push(w); renderCfg()};
+// Gợi ý theo vai trò: Lead chỉ lập kế hoạch và đọc tóm tắt nên không cần model mạnh nhất
+const PRESETS = {
+  save:    { lead:{claude:'sonnet', gemini:'gemini-3.5-flash'}, worker:{claude:'sonnet', gemini:'gemini-3.5-flash'}, effort:'low',
+             say:'Đã điền kiểu Tiết kiệm: Lead và worker Claude dùng sonnet, effort thấp. Bấm Lưu để giữ.' },
+  balance: { lead:{claude:'sonnet'}, worker:{}, effort:'medium', say:'Đã điền kiểu Cân bằng: Lead dùng sonnet, worker dùng model mặc định, effort vừa. Bấm Lưu để giữ.' },
+  strong:  { lead:{}, worker:{}, effort:'high', say:'Đã điền kiểu Mạnh: model mặc định, effort cao. Bấm Lưu để giữ.' },
+};
+$('#agPlan').addEventListener('click',e=>{
+  const b=e.target.closest('[data-preset]'); if(!b) return; const P = PRESETS[b.dataset.preset];
+  cfg = readCfgForm();
+  const set = (a, models)=>{ const c = catalog[a.agent] || {models:[],efforts:[]}; const m = models[a.agent]; a.model = m && c.models.includes(m) ? m : ''; a.effort = c.efforts.includes(P.effort) ? P.effort : '' };
+  set(cfg.lead, P.lead); cfg.workers.forEach(w=>set(w, P.worker)); renderCfg(); toast(P.say,'ok');
+});
 $('#agPlan').addEventListener('click',e=>{const b=e.target.closest('.rm'); if(!b) return; cfg=readCfgForm(); cfg.workers.splice(+b.closest('.arow').dataset.i,1); renderCfg()});
 $('#agPlan').addEventListener('change',e=>{
   const row=e.target.closest('.arow'); if(!row) return;
@@ -1022,8 +1067,9 @@ function renderCatSel(){
 }
 $('#catSel').onchange = (e)=>{ localSet('cat.'+proj, e.target.value); if(state) renderBoard() };
 function cardHtml(t, k){
+  const tu = state?.chat?.taskUsage?.[t.id];
   const extra = [t.parent && t.parent.toLowerCase()!=='none' ? '↳ '+t.parent : '', t.createdBy && t.createdBy!=='lead' ? 'giao bởi '+t.createdBy : ''].filter(Boolean).join(' · ');
-  return `<div class="card s-${esc(t.status)}" data-id="${esc(t.id)}"><div class="id">${esc(t.id)}${extra?' · '+esc(extra):''}</div><div class="t">${esc(t.title||'(không tên)')}</div><div class="o">${esc(t.owner)}${t.status!==k?' · '+esc(t.status):''}</div></div>`;
+  return `<div class="card s-${esc(t.status)}" data-id="${esc(t.id)}"><div class="id">${esc(t.id)}${extra?' · '+esc(extra):''}</div><div class="t">${esc(t.title||'(không tên)')}</div><div class="o">${esc(t.owner)}${t.status!==k?' · '+esc(t.status):''}${tu?`<span class="tk" title="Token quy đổi đã dùng cho task này: ${tu.turns} lượt, gồm lượt worker làm và lượt cấp trên đọc kết quả">${fmtTok(usageEq(tu))} token</span>`:''}</div></div>`;
 }
 function colHtml(list, k){
   if(!list.length) return '<div class="empty">—</div>';
@@ -1069,11 +1115,61 @@ function treeOrder(list){
   for(const w of list) if(!seen.has(w.name)){ seen.add(w.name); out.push({...w, depth:0}) } // watch, vòng lặp
   return out;
 }
+// Trang "Cả đội": mỗi agent một thẻ, bấm vào thẻ để mở chat với agent đó
+let teamOn = false;
+function ago(ts){ const s = Math.max(0, Math.round((Date.now()-ts)/1000)); return s<60 ? 'vừa xong' : s<3600 ? Math.round(s/60)+' phút trước' : s<86400 ? Math.round(s/3600)+' giờ trước' : Math.round(s/86400)+' ngày trước' }
+function renderTeam(){
+  const ags = treeOrder(state.chat.agents.map(a=>({...a})));
+  const info = Object.fromEntries(state.chat.agents.map(a=>[a.name,a]));
+  const n = {busy:0, wants:0, idle:0};
+  const cards = ags.map(w=>{
+    const a = info[w.name]; const task = state.tasks.find(t=>t.owner===a.name && t.status==='in-progress');
+    const k = a.wants ? 'wants' : a.busy || a.queued ? 'busy' : 'idle'; n[k]++;
+    const pill = k==='wants' ? '<span class="pill wait"><span class="dot"></span>chờ bạn cho phép</span>'
+      : k==='busy' ? `<span class="pill busy"><span class="dot"></span>đang làm việc${a.queued?` (+${a.queued} tin chờ)`:''}</span>` : '<span class="pill"><span class="dot on"></span>rảnh</span>';
+    const last = a.last ? `${a.last.role==='you'?'Bạn: ':a.last.role==='system'?'':a.last.error?'Lỗi: ':''}${a.last.text||'…'}` : 'Chưa có tin nhắn nào.';
+    return `<button class="tvcard${k==='wants'?' wants':''}" data-go="${esc(a.name)}"><div class="row"><b>${esc(winLabel(a.name))}</b><span class="spacer"></span>${pill}</div>
+      <span class="hint">${esc([a.agent, a.model, a.effort].filter(Boolean).join(' · '))}${state?.hierarchy?.[a.name]?' · báo cáo cho '+esc(state.hierarchy[a.name]):''}</span>
+      ${task?`<div>📋 <b>${esc(task.id)}</b> ${esc(task.title||'')}</div>`:''}
+      <div class="last">${esc(last)}</div>${a.last?`<span class="hint">${esc(ago(a.last.ts))}</span>`:''}</button>`;
+  }).join('');
+  const by = (s)=>state.tasks.filter(t=>t.status===s).length;
+  const h = `<div class="tvsum"><span class="pill busy"><span class="dot"></span>${n.busy} đang làm</span>${n.wants?`<span class="pill wait"><span class="dot"></span>${n.wants} chờ bạn cho phép</span>`:''}<span class="pill"><span class="dot on"></span>${n.idle} rảnh</span><span class="spacer"></span><span class="hint">Task: ${by('in-progress')} đang làm · ${by('blocked')} bị chặn · ${by('done')} xong / ${state.tasks.length}</span></div><div class="tvgrid">${cards}</div>`;
+  const box = $('#teamView'); if(box._h !== h){ box.innerHTML = h; box._h = h }
+}
+$('#btnTeam').onclick = ()=>{ teamOn = !teamOn; renderTabs(); if(!teamOn) refreshPane() };
+$('#teamView').addEventListener('click', e=>{ const c = e.target.closest('[data-go]'); if(!c) return; teamOn = false; win = c.dataset.go; chatSig=''; localSet('win.'+proj,win); renderTabs(); refreshPane() });
+// Tìm trong lịch sử chat của agent đang chọn
+let csTimer = 0;
+function closeSearch(){ $('#chatSearch').hidden = true; $('#csQ').value = ''; $('#csRes').innerHTML = ''; $('#csInfo').textContent = '' }
+$('#btnSearch').onclick = ()=>{ const b = $('#chatSearch'); if(!b.hidden) return closeSearch(); b.hidden = false; $('#csQ').focus() };
+$('#csClose').onclick = closeSearch;
+$('#csQ').addEventListener('keydown', e=>{ if(e.key==='Escape') closeSearch() });
+$('#csQ').addEventListener('input', ()=>{ clearTimeout(csTimer); csTimer = setTimeout(runSearch, 250) });
+async function runSearch(){
+  const q = $('#csQ').value.trim(), asked = win;
+  if(q.length < 2){ $('#csRes').innerHTML = ''; $('#csInfo').textContent = q ? 'Gõ ít nhất 2 ký tự.' : ''; return }
+  try{
+    const j = await api('GET', `/api/chat/${encodeURIComponent(win)}/search?q=${encodeURIComponent(q)}`); if(asked!==win || q!==$('#csQ').value.trim()) return;
+    $('#csInfo').textContent = j.total ? `Thấy ${j.total} tin${j.total>j.hits.length?`, hiện ${j.hits.length} tin mới nhất`:''}. Bấm vào một dòng để tới tin đó.` : 'Không thấy tin nào.';
+    $('#csRes').innerHTML = j.hits.map(h=>`<button class="cshit" data-hit="${esc(h.id)}"><span class="hint">${esc(new Date(h.ts).toLocaleString([], {day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'}))} · ${h.role==='you'?'Bạn':h.role==='system'?'Hệ thống':esc(winLabel(win))}</span><br>${h.before.length>=80?'…':''}${esc(h.before)}<mark>${esc(h.hit)}</mark>${esc(h.after)}${h.after.length>=160?'…':''}</button>`).join('');
+  }catch(x){ $('#csInfo').textContent = x.message }
+}
+$('#csRes').addEventListener('click', e=>{
+  const b = e.target.closest('[data-hit]'); if(!b) return;
+  const el = $('#chatlog').querySelector(`[data-id="${CSS.escape(b.dataset.hit)}"] .msg`);
+  if(!el) return toast('Tin này đã cũ, không còn nằm trong 150 tin gần nhất đang hiện. Nội dung chính có ngay trong dòng kết quả.', 'ok');
+  el.scrollIntoView({block:'center'}); el.classList.add('flash'); setTimeout(()=>el.classList.remove('flash'), 1800);
+});
 function renderTabs(){
   const all = treeOrder(tabList());
   const wins = all.filter(w=>w.name!=='watch' || $('#showWatch').checked || win==='watch');
   if(wins.length && !wins.some(w=>w.name===win)) win = wins[0].name;
   $('#tabs').innerHTML = wins.map(w=>`<button class="tab small${w.name===win?' sel':''}" data-win="${esc(w.name)}" title="${esc(w.name==='lead'?'Lead: chia việc và nói chuyện với bạn':(workerInfo(w.name)||w.name)+(state?.hierarchy?.[w.name]?' · báo cáo cho '+state.hierarchy[w.name]:''))}">${w.depth>1?'<span class="hint">'+'·'.repeat(w.depth-1)+'</span>':''}${w.depth?'└ ':''}${esc(winLabel(w.name))}${w.busy?'<span class="busy" title="đang làm việc"></span>':''}${w.wants?'<span class="need" title="đang chờ bạn bấm Cho phép">!</span>':''}</button>`).join('') || '<span class="hint">Agents</span>';
+  $('#btnTeam').hidden = !chatOn(); if(!chatOn()) teamOn = false;
+  $('#btnTeam').classList.toggle('sel', teamOn); if(teamOn) $('#tabs').querySelectorAll('.sel').forEach(x=>x.classList.remove('sel'));
+  $('#teamView').hidden = !teamOn; $('#teamView').closest('section').classList.toggle('teamon', teamOn);
+  if(teamOn){ renderTeam(); $('#chatTitle').textContent = '👥 Cả đội'; $('#chatSub').textContent = $('#chatSub').title = 'ai đang làm gì, ai đang chờ bạn'; return }
   $('#chatTitle').textContent = winLabel(win);
   $('#chatSub').textContent = $('#chatSub').title = win==='lead' ? 'chia việc và nói chuyện với bạn' : (workerInfo(win)||'') + (state?.hierarchy?.[win] ? ' · báo cáo cho '+state.hierarchy[win] : '');
   renderSuggest();
@@ -1097,6 +1193,31 @@ $('#dlgSet').addEventListener('close', e=>{ if(e.target===$('#dlgSet')) for(cons
 $('#btnSettings').onclick = ()=>{ const b = PANES[localGet('setTab')] || 'btnAgents'; $('#'+b).click() };
 $('#setClose').onclick = ()=>$('#dlgSet').close();
 $('#btnSys').onclick = ()=>$('#dlgSys').showModal();
+$('#themeSel').value = localGet('theme') || '';
+$('#themeSel').onchange = e=>{ const v = e.target.value; localSet('theme', v); if(v) document.documentElement.dataset.theme = v; else delete document.documentElement.dataset.theme };
+// ---------------------------------------------------------------- kiểm tra máy
+const HC_ICON = {ok:'✅', warn:'⚠️', fail:'❌'};
+async function runHealth(){
+  const box = $('#hcList'); box.innerHTML = '<span class="hint">Đang kiểm tra…</span>'; $('#hcRun').disabled = true;
+  try{
+    const j = await api('GET','/api/health');
+    box.innerHTML = j.checks.map(c=>`<div class="hcrow" data-agent="${esc(c.agent||c.id)}" data-acc="${esc(c.account||'')}"><span>${HC_ICON[c.state]||'•'}</span><div><b>${esc(c.label)}</b> <span class="hint">${esc(c.text)}</span>${c.fix?`<div class="hint hcfix" style="color:var(--blocked)">Cách xử lý: ${esc(c.fix)}</div>`:''}<div class="hint hcres"></div></div>${c.canTry?'<button class="small hcTry">Thử gọi thật</button>':''}</div>`).join('');
+  }catch(e){ box.innerHTML = `<span class="hint">${esc(e.message)}</span>` }
+  $('#hcRun').disabled = false;
+}
+$('#hcRun').onclick = runHealth;
+$('#hcList').addEventListener('click', async e=>{
+  const b = e.target.closest('.hcTry'); if(!b) return; const row = b.closest('.hcrow'), out = row.querySelector('.hcres');
+  b.disabled = true; out.style.color = ''; out.textContent = 'Đang gọi agent, có thể mất tới một phút…';
+  try{
+    const r = await api('POST','/api/health/try',{agent:row.dataset.agent, account:row.dataset.acc||undefined});
+    out.style.color = r.ok ? 'var(--done)' : 'var(--blocked)';
+    out.textContent = r.ok ? `Trả lời được sau ${r.seconds} giây: "${r.text}".` + (r.streaming===true?' Chữ hiện dần: có.':r.streaming===false?' Chữ hiện dần: bản này chưa hỗ trợ.':'') : 'Không gọi được: ' + r.error;
+    if(r.usage) out.title = 'Số liệu token gốc: ' + r.usage;
+    if(r.ok){ row.firstElementChild.textContent = HC_ICON.ok; row.querySelector('.hcfix')?.remove() }
+  }catch(x){ out.style.color = 'var(--blocked)'; out.textContent = x.message }
+  b.disabled = false;
+});
 
 // ---------------------------------------------------------------- bộ nhớ
 async function renderMem(){
@@ -1375,7 +1496,7 @@ function msgHtml(m){
   if(m.role==='you') return `<div class="msg you" title="${esc(time)}">${esc(m.text)}${filesHtml(m)}</div>`;
   if(m.role==='system') return `<div class="msg system">${esc(m.text)} · ${esc(time)}</div>`;
   const who = (win==='lead'?'👑 Lead':'🛠 '+win) + (m.agent?' · '+m.agent:'') + ' · ' + time;
-  return `<div class="msg agent"><div class="who" title="${m.usage?esc(`Lượt này: ${fmtTok(usageEq(m.usage))} token quy đổi (mới ${fmtTok(Math.max(0,m.usage.in-(m.usage.cached||0)))}, đọc lại từ bộ nhớ đệm ${fmtTok(m.usage.cached||0)}, trả lời ${fmtTok(m.usage.out)})`+(m.usage.cost?` · $${m.usage.cost.toFixed(3)}`:'')+(m.usage.partial?' · lượt bị dừng, số ước tính':'')):''}">${esc(who)}</div>${stepsHtml(m)}${liveText(m)?md(liveText(m)):''}${m.running&&!liveText(m)?'<span class="typing"><i></i><i></i><i></i></span>':''}${filesHtml(m)}${errHtml(m)}${grantHtml(m)}${m.note?`<div class="hint">${esc(m.note)}</div>`:''}</div>`;
+  return `<div class="msg agent"><div class="who" title="${m.usage?esc(`Lượt này: ${fmtTok(usageEq(m.usage))} token quy đổi (mới ${fmtTok(Math.max(0,m.usage.in-(m.usage.cached||0)))}, đọc lại từ bộ nhớ đệm ${fmtTok(m.usage.cached||0)}, trả lời ${fmtTok(m.usage.out)})`+(m.usage.cost?` · $${m.usage.cost.toFixed(3)}`:'')+(m.usage.partial?' · lượt bị dừng, số ước tính':'')):''}">${esc(who)}</div>${stepsHtml(m)}${liveText(m)?md(liveText(m)):''}${m.running&&!liveText(m)?'<span class="typing"><i></i><i></i><i></i></span>':''}${filesHtml(m)}${errHtml(m)}${grantHtml(m)}${undoHtml(m)}${m.note?`<div class="hint">${esc(m.note)}</div>`:''}</div>`;
 }
 // Lỗi của agent: câu giải thích dễ hiểu và nút xử lý; dòng lỗi gốc nằm trong "Chi tiết"
 const ERR_KINDS = [
@@ -1392,6 +1513,12 @@ function errHtml(m){
   if(!k) return `<div class="errbox">⚠️ ${esc(m.error)}</div>`;
   return `<div class="errbox"><b>⚠️ ${esc(k[1])}</b><div>${esc(k[2])}</div>${k[3]?`<div class="row" style="margin-top:6px"><button class="small" data-open="${k[3][0]}">${esc(k[3][1])}</button></div>`:''}<details class="steps"><summary>Chi tiết lỗi</summary><pre>${esc(m.error)}</pre></details></div>`;
 }
+// Hoàn tác thay đổi file của một lượt (dashboard chụp thư mục trước và sau mỗi lượt)
+function undoHtml(m){
+  if(!m.snap || m.running) return '';
+  if(m.undone) return `<div class="hint">↩ Đã hoàn tác ${m.undone.restored} file của lượt này${m.undone.skipped?.length?`, giữ nguyên ${m.undone.skipped.length} file đã bị sửa tiếp`:''}.</div>`;
+  return `<div class="row undo"><button class="small" data-undo="${esc(m.id)}" title="Đưa các file lượt này đã sửa về như trước lượt. File mới tạo sẽ bị xoá. File đã bị sửa tiếp sau đó được giữ nguyên.">↩ Hoàn tác ${m.snap.files} file lượt này đã đổi</button></div>`;
+}
 function grantHtml(m){
   if(!m.grants?.length || m.running) return '';
   const have = (state?.chat?.agents.find(a=>a.name===win)?.grants)||[];
@@ -1405,6 +1532,12 @@ function grantHtml(m){
 $('#chatlog').addEventListener('click',async e=>{
   const f=e.target.closest('[data-file]'); if(f){ openFile(f.dataset.file, f.dataset.name, f.dataset.kind); return }
   const o=e.target.closest('[data-open]'); if(o){ $('#'+o.dataset.open).click(); return }
+  const u=e.target.closest('[data-undo]'); if(u){
+    if(!confirm('Hoàn tác thay đổi file của lượt này?\n\nCác file lượt này đã sửa sẽ trở về như trước lượt, file mới tạo sẽ bị xoá. File nào đã bị sửa tiếp sau đó thì được giữ nguyên. Lịch sử git không bị xoá.')) return;
+    u.disabled = true;
+    try{ const r = await api('POST',`/api/chat/${encodeURIComponent(win)}/undo`,{msgId:u.dataset.undo}); toast(`Đã hoàn tác ${r.restored.length} file.`+(r.skipped.length?` Giữ nguyên ${r.skipped.length} file.`:''),'ok'); chatSig=''; refreshChat() }catch(x){ toast(x.message,'err'); u.disabled=false }
+    return;
+  }
   const b=e.target.closest('[data-grant]'); if(!b) return;
   b.disabled=true;
   try{await api('POST',`/api/chat/${encodeURIComponent(win)}/grant`,{msgId:b.dataset.grant}); chatSig=''; refreshChat()}catch(x){toast(x.message,'err'); b.disabled=false}
@@ -1420,8 +1553,20 @@ async function refreshChat(){
       const firstPaint = !chatSig.startsWith(asked);
       chatSig = sig;
       const open = new Set([...box.querySelectorAll('details.steps[open]')].map(d=>d.closest('[data-id]')?.dataset.id));
+      // danh sách cũ vẫn là phần đầu của danh sách mới: chỉ vẽ lại tin đã đổi và thêm tin mới, để chữ không nháy và phần đang chọn không mất
+      const kids = [...box.children];
+      const keep = !firstPaint && kids.length && kids.length <= j.messages.length && kids.every((k,i)=>k.dataset.id && k.dataset.id===String(j.messages[i].id));
+      if(keep){
+        j.messages.forEach((m,i)=>{
+          const h = msgHtml(m); let el = kids[i];
+          if(!el){ el = document.createElement('div'); el.dataset.id = m.id; el.style.display = 'contents'; box.append(el) }
+          if(el._h !== h){ el.innerHTML = h; el._h = h }
+        });
+      } else {
       box.innerHTML = j.messages.length ? j.messages.map(m=>`<div data-id="${esc(m.id)}" style="display:contents">${msgHtml(m)}</div>`).join('')
         : `<div class="chatempty"><b>${win==='lead'?'Chào bạn 👋':'Worker '+esc(win)}</b>${win==='lead'?'Hãy nhắn cho Lead bạn muốn làm gì. Lead sẽ chia việc thành task nhỏ, giao cho worker và báo lại kết quả ở đây.':'Worker nhận việc từ Lead. Khi có task, các bước làm sẽ hiện ở đây. Bạn cũng có thể nhắn trực tiếp.'}</div>`;
+        [...box.children].forEach((k,i)=>{ if(k.dataset.id) k._h = msgHtml(j.messages[i]) });
+      }
       for(const id of open){ const d = box.querySelector(`[data-id="${CSS.escape(id)}"] details.steps`); if(d) d.open = true }
       markOpenFile();
       if($('#follow').checked && (atBottom || firstPaint)) box.scrollTop = box.scrollHeight;
@@ -1546,7 +1691,7 @@ async function startAgents(){
 
 $('#board').addEventListener('toggle',e=>{const d=e.target; if(d.classList?.contains('cat')) localSet('fold.'+proj+'.'+d.dataset.col+'.'+d.dataset.cat, d.open?'':'1')}, true);
 $('#board').addEventListener('click',e=>{const c=e.target.closest('.card'); if(c) openTask(c.dataset.id)});
-$('#tabs').addEventListener('click',e=>{const b=e.target.closest('[data-win]'); if(!b) return; win=b.dataset.win; chatSig=''; localSet('win.'+proj,win); delete $('#term').dataset.seen; renderTabs(); refreshPane()});
+$('#tabs').addEventListener('click',e=>{const b=e.target.closest('[data-win]'); if(!b) return; teamOn=false; closeSearch(); win=b.dataset.win; chatSig=''; localSet('win.'+proj,win); delete $('#term').dataset.seen; renderTabs(); refreshPane()});
 $('#keys').innerHTML = KEYS.map(([k,l])=>`<button class="small" data-key="${k}">${l}</button>`).join('') + '<span class="hint" style="align-self:center">gửi phím vào window đang chọn</span>';
 $('#keys').addEventListener('click',async e=>{const b=e.target.closest('[data-key]'); if(!b) return; try{await api('POST','/api/send',{win,key:b.dataset.key}); setTimeout(refreshPane,300)}catch(x){toast(x.message,'err')}});
 $('#btnSend').onclick = sendMsg;

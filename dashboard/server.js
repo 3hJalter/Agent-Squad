@@ -680,6 +680,7 @@ on('PUT', /^\/api\/task\/([^/]+)$/, async (req, res, m, url) => {
 });
 
 const chat = require('./chat')({ on, send, readBody, getCtx, loadProjects, loadAccounts, withCtx, run });
+require('./health')({ on, send, readBody, getCtx, run, loadAccounts });
 const validAgent = (a) => !!specOf(a) && { name: a.name || '', agent: a.agent, model: a.model || '', effort: a.effort || '' };
 
 const assign = async (ctx, id, w) => {
