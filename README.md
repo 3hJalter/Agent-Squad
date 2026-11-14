@@ -83,6 +83,8 @@ Nâng cấp chính Agent-Squad bằng agent: chọn project Agent-Squad trên da
     "Thử gọi thật" gửi cho agent một câu rất ngắn (tốn vài token) để chắc agent trả lời được.
   - **↩ Hoàn tác** (kiểu Chat, project có git, `dashboard/undo.js`): dashboard chụp thư mục làm việc trước và sau mỗi lượt (không đụng index hay lịch sử commit).
     Nút "Hoàn tác" dưới tin nhắn của agent đưa các file lượt đó đã đổi về như trước; file mới tạo bị xoá, file đã bị sửa tiếp sau đó được giữ nguyên.
+  - **⚠️ Trùng file** (thư mục chung, `dashboard/overlap.js`): khi hai agent cùng sửa một file trong lúc cả hai còn đang làm, dashboard báo ngay trong chat của agent đó và của Lead.
+    Ở thư mục chung, commit tự động của dashboard chỉ gồm đúng các file của lượt đó, không gom thay đổi của agent khác.
   - Kiểm thử: `node --test dashboard/test/*.test.js`.
   - **📊 Token**: số token mỗi agent đã dùng và tỉ lệ % theo Claude / Codex / Gemini (kiểu Chat, lưu ở `.agents/chat/usage.json`).
     Số lấy từ báo cáo của chính CLI sau mỗi lượt, tách thành Mới / Đệm (đọc lại từ bộ nhớ đệm) / Trả lời; cột "Quy đổi" = Mới + Đệm/10 + Trả lời

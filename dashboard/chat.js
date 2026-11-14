@@ -168,6 +168,7 @@ const noLink = (a) => a?.agent === 'codex';
 const gitByDashboard = (ctx, name, a) => ctx.kind !== 'office' && name !== 'lead' && a?.agent === 'codex';
 
 const undo = require('./undo');
+const overlap = require('./overlap');
 module.exports = function setupChat({ on, send, readBody, getCtx, loadProjects, loadAccounts, withCtx, run }) {
   let noPartial = false; // bản Claude Code cũ không có --include-partial-messages: tắt chữ hiện dần
   const live = new Map(); // key root|name -> { child, msg, queue: [] }
@@ -582,7 +583,7 @@ module.exports = function setupChat({ on, send, readBody, getCtx, loadProjects, 
     if (!st.sessions[name] && !job.memorySave) { const mem = readMemory(ctx); if (mem.trim()) text = PROJECT_MEMORY(mem) + text; }
     const { cmd, args, stdin } = buildCmd(ctx, name, a, st.sessions[name], text, (st.grants || {})[name] || []);
     const msg = newMsg('agent', '', { steps: [], running: true, agent: a.agent, ...(useCm(ctx, a) ? { cm: true } : {}) });
-    L.msg = msg;
+    L.msg = msg; L.t0 = Date.now();
     // chụp thư mục làm việc trước lượt, để sau này hoàn tác được (project không dùng git thì bỏ qua)
     const preSnap = ctx.kind === 'office' || job.memorySave ? Promise.resolve('') : undo.snapshot(run, a.cwd).catch(() => '');
     const parse = makeParser(a.agent, msg, (sid) => { const s2 = loadState(ctx); s2.sessions[name] = sid; saveState(ctx, s2); });
@@ -622,6 +623,7 @@ module.exports = function setupChat({ on, send, readBody, getCtx, loadProjects, 
     });
     }
     async function finish() {
+      let turnFiles = [];
       delete msg.running; delete msg.draft; L.child = null; L.msg = null; L.stopped = false;
       if (!msg.text && !msg.error && !msg.steps.length) msg.text = '(không có trả lời)';
       try { const fl = filesOf(ctx, a, msg); if (fl.length) msg.files = fl; } catch { /* không bắt buộc */ }
@@ -654,14 +656,34 @@ module.exports = function setupChat({ on, send, readBody, getCtx, loadProjects, 
         const pre = await preSnap;
         if (pre) {
           const post = await undo.snapshot(run, a.cwd);
-          const n = (await undo.changed(run, a.cwd, pre, post)).length;
+          turnFiles = (await undo.changed(run, a.cwd, pre, post)).map((x) => x.file);
+          const n = turnFiles.length;
           if (n) { msg.snap = { pre, post, cwd: a.cwd, files: n }; rewrite(ctx, name); }
         }
       } catch { /* không hoàn tác được lượt này, không sao */ }
+      // thư mục chung: báo khi lượt này sửa file mà một agent khác đang làm dở cũng đã sửa
+      if (turnFiles.length && ctx.kind !== 'office' && !usesWt(ctx, a)) {
+        try {
+          const st4 = loadState(ctx);
+          st4.touched = st4.touched || {};
+          // agent kia còn tính là đang làm nếu: đang chạy, task còn dở, hoặc vừa sửa file trong lúc lượt này đang chạy
+          const active = (other, task, at) => !!st4.agents[other] && (isBusy(ctx, other) || at >= (L.t0 || Infinity) || (!!task && taskStatus(ctx, task) === 'in-progress'));
+          const clashes = overlap.record(st4.touched, name, job.taskId || '', turnFiles, active);
+          saveState(ctx, st4);
+          if (clashes.length) {
+            const by = {};
+            for (const c of clashes) (by[c.other] = by[c.other] || []).push(c.file);
+            const txt = Object.entries(by).map(([o, fl]) => `${o} (${fl.slice(0, 4).join(', ')}${fl.length > 4 ? '…' : ''})`).join('; ');
+            const warn = `⚠️ ${name} vừa sửa file mà agent khác cũng đang sửa: ${txt}. Hai agent có thể ghi đè lên nhau. Nên để một agent làm xong rồi agent kia mới sửa tiếp.`;
+            addMessage(ctx, name, newMsg('system', warn));
+            if (name !== 'lead' && st4.agents.lead) addMessage(ctx, 'lead', newMsg('system', warn));
+          }
+        } catch { /* chỉ là cảnh báo */ }
+      }
       if (gitByDashboard(ctx, name, a)) {
         L.committing = true;
         try {
-          const c = await autoCommit(a.cwd, `${job.taskId || 'work'}: changes by ${name}`);
+          const c = await autoCommit(a.cwd, `${job.taskId || 'work'}: changes by ${name}`, !usesWt(ctx, a) && turnFiles.length && turnFiles.length <= 200 ? turnFiles : null);
           if (c) addMessage(ctx, name, newMsg('system', c));
         } catch (e) { addMessage(ctx, name, newMsg('system', 'Không commit được: ' + e.message)); }
         L.committing = false;
@@ -671,7 +693,8 @@ module.exports = function setupChat({ on, send, readBody, getCtx, loadProjects, 
   }
 
   // commit mọi thay đổi trong worktree (trừ .agents); trả về câu báo hoặc '' nếu không có gì
-  async function autoCommit(cwd, message) {
+  async function autoCommit(cwd, message, only = null) {
+    if (only) return commitOnly(cwd, message, only);
     const st = await run('git', ['-C', cwd, 'status', '--porcelain', '--', '.', ':(exclude).agents']);
     if (!st.ok || !st.out.trim()) return '';
     const id = await run('git', ['-C', cwd, 'config', 'user.email']);
@@ -682,6 +705,20 @@ module.exports = function setupChat({ on, send, readBody, getCtx, loadProjects, 
     return `💾 Dashboard đã commit thay đổi của lượt này (${st.out.trim().split('\n').length} file).`;
   }
 
+
+  // thư mục chung: chỉ commit đúng các file của lượt này (đường dẫn tính từ gốc repo), không gom thay đổi của agent khác
+  async function commitOnly(cwd, message, files) {
+    const spec = files.map((f) => ':(top,literal)' + f);
+    const st = await run('git', ['-C', cwd, 'status', '--porcelain', '--', ...spec]);
+    if (!st.ok || !st.out.trim()) return '';
+    const id = await run('git', ['-C', cwd, 'config', 'user.email']);
+    const who = id.out.trim() ? [] : ['-c', 'user.name=Agent-Squad', '-c', 'user.email=agent-squad@localhost'];
+    await run('git', ['-C', cwd, 'add', '-A', '--', ...spec]);
+    const c = await run('git', ['-C', cwd, ...who, 'commit', '-m', message, '--only', '--', ...spec]);
+    if (!c.ok) throw new Error((c.out + c.err).trim().slice(0, 400));
+    return `💾 Dashboard đã commit ${st.out.trim().split('\n').length} file của lượt này.`;
+  }
+  const taskStatus = (ctx, id) => { try { return (fs.readFileSync(path.join(ctx.root, '.agents', 'tasks', id + '.md'), 'utf8').match(/^Status:\s*(\S+)/m) || [])[1] || ''; } catch { return ''; } };
 
   // ------------------------------------------------------------ ảnh / file trong chat
   const IMG_RE = /\.(png|jpe?g|gif|webp|bmp|svg)$/i;
