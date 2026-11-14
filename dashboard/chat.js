@@ -167,6 +167,7 @@ const noLink = (a) => a?.agent === 'codex';
 // merge nhánh chính vào worktree trước khi giao việc, và commit thay đổi sau mỗi lượt.
 const gitByDashboard = (ctx, name, a) => ctx.kind !== 'office' && name !== 'lead' && a?.agent === 'codex';
 
+const undo = require('./undo');
 module.exports = function setupChat({ on, send, readBody, getCtx, loadProjects, loadAccounts, withCtx, run }) {
   let noPartial = false; // bản Claude Code cũ không có --include-partial-messages: tắt chữ hiện dần
   const live = new Map(); // key root|name -> { child, msg, queue: [] }
@@ -573,12 +574,22 @@ module.exports = function setupChat({ on, send, readBody, getCtx, loadProjects, 
       text = READ_MEMORY(handoffFile(ctx, name)) + text;
       delete st.handoffRead[name]; saveState(ctx, st);
     }
+    if ((st.undoNote || {})[name]) {
+      if (st.sessions[name]) text = `NOTE: the human undid the file changes of one of your earlier turns (${st.undoNote[name]}). Those files are back to how they were before that turn; re-read a file before editing it.\n\n` + text;
+      delete st.undoNote[name]; saveState(ctx, st);
+    }
     // mọi cuộc trò chuyện mới đều nhận bộ nhớ chung của project
     if (!st.sessions[name] && !job.memorySave) { const mem = readMemory(ctx); if (mem.trim()) text = PROJECT_MEMORY(mem) + text; }
     const { cmd, args, stdin } = buildCmd(ctx, name, a, st.sessions[name], text, (st.grants || {})[name] || []);
     const msg = newMsg('agent', '', { steps: [], running: true, agent: a.agent, ...(useCm(ctx, a) ? { cm: true } : {}) });
     L.msg = msg;
+    // chụp thư mục làm việc trước lượt, để sau này hoàn tác được (project không dùng git thì bỏ qua)
+    const preSnap = ctx.kind === 'office' || job.memorySave ? Promise.resolve('') : undo.snapshot(run, a.cwd).catch(() => '');
     const parse = makeParser(a.agent, msg, (sid) => { const s2 = loadState(ctx); s2.sessions[name] = sid; saveState(ctx, s2); });
+    // đợi chụp xong rồi mới chạy agent (trong lúc đó coi như đang bận), để bản chụp chắc chắn là trước khi agent sửa gì
+    L.committing = true;
+    preSnap.then(() => { L.committing = false; launch(); });
+    function launch() {
     let child;
     try {
       // detached: agent và mọi lệnh con của nó cùng một nhóm tiến trình, để nút Dừng tắt được hết
@@ -609,6 +620,7 @@ module.exports = function setupChat({ on, send, readBody, getCtx, loadProjects, 
       else if (code && !msg.error) msg.error = short(errTail.trim() || `Agent thoát với mã ${code}${signal ? ' (' + signal + ')' : ''}`, 800);
       finish();
     });
+    }
     async function finish() {
       delete msg.running; delete msg.draft; L.child = null; L.msg = null; L.stopped = false;
       if (!msg.text && !msg.error && !msg.steps.length) msg.text = '(không có trả lời)';
@@ -638,6 +650,14 @@ module.exports = function setupChat({ on, send, readBody, getCtx, loadProjects, 
       if (msg.usage) { try { addUsage(ctx, name, a, msg.usage, !!msg.cm, raw, job.taskId ? [job.taskId] : job.costTasks || []); } catch (e) { console.error('usage:', e.message); } }
       addMessage(ctx, name, msg);
       if (after) after();
+      try {
+        const pre = await preSnap;
+        if (pre) {
+          const post = await undo.snapshot(run, a.cwd);
+          const n = (await undo.changed(run, a.cwd, pre, post)).length;
+          if (n) { msg.snap = { pre, post, cwd: a.cwd, files: n }; rewrite(ctx, name); }
+        }
+      } catch { /* không hoàn tác được lượt này, không sao */ }
       if (gitByDashboard(ctx, name, a)) {
         L.committing = true;
         try {
@@ -1263,6 +1283,28 @@ module.exports = function setupChat({ on, send, readBody, getCtx, loadProjects, 
     } else enqueue(ctx, name, text);
     send(res, 200, { ok: true });
   });
+  on('POST', /^\/api\/chat\/([^/]+)\/undo$/, async (req, res, m, url) => {
+    const [name] = m; const ctx = getCtx(url);
+    if (!NAME_RE.test(name)) return send(res, 400, { error: 'Tên không hợp lệ' });
+    const b = await readBody(req);
+    const L = live.get(key(ctx, name));
+    if (L && (L.child || L.committing)) return send(res, 409, { error: 'Agent đang làm việc. Chờ xong hoặc bấm Dừng rồi hoàn tác.' });
+    const msg = messages(ctx, name).find((x) => x.id === b.msgId);
+    if (!msg || !msg.snap || msg.undone) return send(res, 400, { error: 'Lượt này không hoàn tác được (không có bản chụp, hoặc đã hoàn tác rồi).' });
+    try {
+      const r = await undo.undoTurn(run, msg.snap.cwd, msg.snap.pre, msg.snap.post);
+      msg.undone = { restored: r.restored.length, skipped: r.skipped.slice(0, 20) };
+      rewrite(ctx, name);
+      let note = `↩ Đã hoàn tác ${r.restored.length} file của lượt này.` + (r.skipped.length ? ` Giữ nguyên ${r.skipped.length} file vì đã bị sửa tiếp sau đó: ${r.skipped.slice(0, 5).join(', ')}${r.skipped.length > 5 ? '…' : ''}.` : '');
+      const st = loadState(ctx), a = st.agents[name];
+      if (r.restored.length) {
+        st.undoNote = st.undoNote || {}; st.undoNote[name] = short(r.restored.join(', '), 600); saveState(ctx, st);
+        if (a && gitByDashboard(ctx, name, a)) { try { const c = await autoCommit(msg.snap.cwd, `undo: revert a turn of ${name}`); if (c) note += ' ' + c; } catch { /* để nguyên chưa commit */ } }
+      }
+      addMessage(ctx, name, newMsg('system', note));
+      send(res, 200, { ok: true, ...r });
+    } catch (e) { send(res, 500, { error: e.message }); }
+  });
   on('POST', /^\/api\/chat\/([^/]+)\/stop$/, (req, res, m, url) => {
     const [name] = m; const ctx = getCtx(url);
     const L = live.get(key(ctx, name));
@@ -1390,3 +1432,4 @@ module.exports = function setupChat({ on, send, readBody, getCtx, loadProjects, 
 
   return { start, stopAll, info, listRequests, killAll, busyCount, toShared, resolveFile, MAX_FILE, resourceInfo, isActive: (ctx) => !!loadState(ctx).active };
 };
+module.exports._test = { prefixesOf, cmdLabel, sayCmd, bareShell };

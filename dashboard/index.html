@@ -113,6 +113,8 @@ code{font:12px ui-monospace,Consolas,monospace}
 .termwrap .term{flex:1}
 pre.diff span{display:block}pre.diff .da{background:#e3f1e0;color:#1d5a2a}pre.diff .dd{background:#f8e1dc;color:#8a2a1c}pre.diff .dh{color:var(--muted);text-align:center}
 #dfMode button{font-size:12px;padding:2px 8px}
+.msg .undo{margin-top:6px}.msg .undo button{color:var(--muted);font-size:12px}
+.hcrow{display:grid;grid-template-columns:22px minmax(0,1fr) auto;gap:8px;align-items:start;padding:6px 8px;border:1px solid var(--line);border-radius:8px;background:var(--panel)}
 .starthint{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;background:var(--bg);color:var(--text);text-align:center;padding:16px}
 .starthint button{font-size:14px;padding:8px 16px}
 .shteam{display:flex;gap:6px;flex-wrap:wrap;justify-content:center;max-width:620px}
@@ -366,6 +368,10 @@ dialog.pane>.dlg-h>button[id$="Close"]{display:none}
     <div class="setrow"><label style="color:var(--text);display:flex;gap:6px;align-items:center"><input type="checkbox" id="follow" checked> Tự cuộn xuống cuối</label><span class="hint">Khi có tin mới, khung chat tự cuộn xuống dưới cùng.</span></div>
     <div class="setrow"><label style="color:var(--text);display:flex;gap:6px;align-items:center"><input type="checkbox" id="showWatch"> Hiện cửa sổ "watch"</label><span class="hint">Nhật ký giao việc, chỉ có ở kiểu Terminal.</span></div>
     <div class="setrow"><button id="btnUpdate">⟳ Cập nhật</button><span class="hint">Tải bản Agent-Squad mới nhất từ GitHub và khởi động lại dashboard.</span></div>
+    <div class="box" id="hcBox"><h4 class="row">🩺 Kiểm tra máy <span class="spacer"></span><button id="hcRun" class="small primary">Kiểm tra</button></h4>
+      <span class="hint">Xem công cụ đã cài và đã đăng nhập chưa. "Thử gọi thật" gửi cho agent một câu rất ngắn (tốn vài token) để chắc chắn agent trả lời được.</span>
+      <div id="hcList" style="display:grid;gap:6px"></div>
+    </div>
     <div class="setrow"><button id="btnRestart">↻ Khởi động lại</button><span class="hint">Khởi động lại dashboard để dùng code mới trên máy.</span></div>
   </div>
 </dialog>
@@ -1111,6 +1117,29 @@ $('#dlgSet').addEventListener('close', e=>{ if(e.target===$('#dlgSet')) for(cons
 $('#btnSettings').onclick = ()=>{ const b = PANES[localGet('setTab')] || 'btnAgents'; $('#'+b).click() };
 $('#setClose').onclick = ()=>$('#dlgSet').close();
 $('#btnSys').onclick = ()=>$('#dlgSys').showModal();
+// ---------------------------------------------------------------- kiểm tra máy
+const HC_ICON = {ok:'✅', warn:'⚠️', fail:'❌'};
+async function runHealth(){
+  const box = $('#hcList'); box.innerHTML = '<span class="hint">Đang kiểm tra…</span>'; $('#hcRun').disabled = true;
+  try{
+    const j = await api('GET','/api/health');
+    box.innerHTML = j.checks.map(c=>`<div class="hcrow" data-agent="${esc(c.agent||c.id)}" data-acc="${esc(c.account||'')}"><span>${HC_ICON[c.state]||'•'}</span><div><b>${esc(c.label)}</b> <span class="hint">${esc(c.text)}</span>${c.fix?`<div class="hint hcfix" style="color:var(--blocked)">Cách xử lý: ${esc(c.fix)}</div>`:''}<div class="hint hcres"></div></div>${c.canTry?'<button class="small hcTry">Thử gọi thật</button>':''}</div>`).join('');
+  }catch(e){ box.innerHTML = `<span class="hint">${esc(e.message)}</span>` }
+  $('#hcRun').disabled = false;
+}
+$('#hcRun').onclick = runHealth;
+$('#hcList').addEventListener('click', async e=>{
+  const b = e.target.closest('.hcTry'); if(!b) return; const row = b.closest('.hcrow'), out = row.querySelector('.hcres');
+  b.disabled = true; out.style.color = ''; out.textContent = 'Đang gọi agent, có thể mất tới một phút…';
+  try{
+    const r = await api('POST','/api/health/try',{agent:row.dataset.agent, account:row.dataset.acc||undefined});
+    out.style.color = r.ok ? 'var(--done)' : 'var(--blocked)';
+    out.textContent = r.ok ? `Trả lời được sau ${r.seconds} giây: "${r.text}".` + (r.streaming===true?' Chữ hiện dần: có.':r.streaming===false?' Chữ hiện dần: bản này chưa hỗ trợ.':'') : 'Không gọi được: ' + r.error;
+    if(r.usage) out.title = 'Số liệu token gốc: ' + r.usage;
+    if(r.ok){ row.firstElementChild.textContent = HC_ICON.ok; row.querySelector('.hcfix')?.remove() }
+  }catch(x){ out.style.color = 'var(--blocked)'; out.textContent = x.message }
+  b.disabled = false;
+});
 
 // ---------------------------------------------------------------- bộ nhớ
 async function renderMem(){
@@ -1389,7 +1418,7 @@ function msgHtml(m){
   if(m.role==='you') return `<div class="msg you" title="${esc(time)}">${esc(m.text)}${filesHtml(m)}</div>`;
   if(m.role==='system') return `<div class="msg system">${esc(m.text)} · ${esc(time)}</div>`;
   const who = (win==='lead'?'👑 Lead':'🛠 '+win) + (m.agent?' · '+m.agent:'') + ' · ' + time;
-  return `<div class="msg agent"><div class="who" title="${m.usage?esc(`Lượt này: ${fmtTok(usageEq(m.usage))} token quy đổi (mới ${fmtTok(Math.max(0,m.usage.in-(m.usage.cached||0)))}, đọc lại từ bộ nhớ đệm ${fmtTok(m.usage.cached||0)}, trả lời ${fmtTok(m.usage.out)})`+(m.usage.cost?` · $${m.usage.cost.toFixed(3)}`:'')+(m.usage.partial?' · lượt bị dừng, số ước tính':'')):''}">${esc(who)}</div>${stepsHtml(m)}${liveText(m)?md(liveText(m)):''}${m.running&&!liveText(m)?'<span class="typing"><i></i><i></i><i></i></span>':''}${filesHtml(m)}${errHtml(m)}${grantHtml(m)}${m.note?`<div class="hint">${esc(m.note)}</div>`:''}</div>`;
+  return `<div class="msg agent"><div class="who" title="${m.usage?esc(`Lượt này: ${fmtTok(usageEq(m.usage))} token quy đổi (mới ${fmtTok(Math.max(0,m.usage.in-(m.usage.cached||0)))}, đọc lại từ bộ nhớ đệm ${fmtTok(m.usage.cached||0)}, trả lời ${fmtTok(m.usage.out)})`+(m.usage.cost?` · $${m.usage.cost.toFixed(3)}`:'')+(m.usage.partial?' · lượt bị dừng, số ước tính':'')):''}">${esc(who)}</div>${stepsHtml(m)}${liveText(m)?md(liveText(m)):''}${m.running&&!liveText(m)?'<span class="typing"><i></i><i></i><i></i></span>':''}${filesHtml(m)}${errHtml(m)}${grantHtml(m)}${undoHtml(m)}${m.note?`<div class="hint">${esc(m.note)}</div>`:''}</div>`;
 }
 // Lỗi của agent: câu giải thích dễ hiểu và nút xử lý; dòng lỗi gốc nằm trong "Chi tiết"
 const ERR_KINDS = [
@@ -1406,6 +1435,12 @@ function errHtml(m){
   if(!k) return `<div class="errbox">⚠️ ${esc(m.error)}</div>`;
   return `<div class="errbox"><b>⚠️ ${esc(k[1])}</b><div>${esc(k[2])}</div>${k[3]?`<div class="row" style="margin-top:6px"><button class="small" data-open="${k[3][0]}">${esc(k[3][1])}</button></div>`:''}<details class="steps"><summary>Chi tiết lỗi</summary><pre>${esc(m.error)}</pre></details></div>`;
 }
+// Hoàn tác thay đổi file của một lượt (dashboard chụp thư mục trước và sau mỗi lượt)
+function undoHtml(m){
+  if(!m.snap || m.running) return '';
+  if(m.undone) return `<div class="hint">↩ Đã hoàn tác ${m.undone.restored} file của lượt này${m.undone.skipped?.length?`, giữ nguyên ${m.undone.skipped.length} file đã bị sửa tiếp`:''}.</div>`;
+  return `<div class="row undo"><button class="small" data-undo="${esc(m.id)}" title="Đưa các file lượt này đã sửa về như trước lượt. File mới tạo sẽ bị xoá. File đã bị sửa tiếp sau đó được giữ nguyên.">↩ Hoàn tác ${m.snap.files} file lượt này đã đổi</button></div>`;
+}
 function grantHtml(m){
   if(!m.grants?.length || m.running) return '';
   const have = (state?.chat?.agents.find(a=>a.name===win)?.grants)||[];
@@ -1419,6 +1454,12 @@ function grantHtml(m){
 $('#chatlog').addEventListener('click',async e=>{
   const f=e.target.closest('[data-file]'); if(f){ openFile(f.dataset.file, f.dataset.name, f.dataset.kind); return }
   const o=e.target.closest('[data-open]'); if(o){ $('#'+o.dataset.open).click(); return }
+  const u=e.target.closest('[data-undo]'); if(u){
+    if(!confirm('Hoàn tác thay đổi file của lượt này?\n\nCác file lượt này đã sửa sẽ trở về như trước lượt, file mới tạo sẽ bị xoá. File nào đã bị sửa tiếp sau đó thì được giữ nguyên. Lịch sử git không bị xoá.')) return;
+    u.disabled = true;
+    try{ const r = await api('POST',`/api/chat/${encodeURIComponent(win)}/undo`,{msgId:u.dataset.undo}); toast(`Đã hoàn tác ${r.restored.length} file.`+(r.skipped.length?` Giữ nguyên ${r.skipped.length} file.`:''),'ok'); chatSig=''; refreshChat() }catch(x){ toast(x.message,'err'); u.disabled=false }
+    return;
+  }
   const b=e.target.closest('[data-grant]'); if(!b) return;
   b.disabled=true;
   try{await api('POST',`/api/chat/${encodeURIComponent(win)}/grant`,{msgId:b.dataset.grant}); chatSig=''; refreshChat()}catch(x){toast(x.message,'err'); b.disabled=false}
