@@ -69,6 +69,8 @@ details summary{cursor:pointer;font-weight:600}
   <a class="sub" href="#quyen-chat">Agent xin quyền</a>
   <a class="sub" href="#loi">Khi agent gặp lỗi</a>
   <a class="sub" href="#xem-file">Xem file và thay đổi</a>
+  <a class="sub" href="#ca-doi">Cả đội</a>
+  <a class="sub" href="#hoan-tac">Hoàn tác, tìm kiếm</a>
   <a href="#cai-dat-tab">7. Cài đặt</a>
   <a class="sub" href="#doi-agent">Đội agent</a>
   <a class="sub" href="#cach-lam-viec">Cách làm việc</a>
@@ -193,6 +195,17 @@ details summary{cursor:pointer;font-weight:600}
 <p>Bấm vào thẻ file trong chat để mở file ở cột phải (thay chỗ Tasks). File <code>.md</code> hiện như tài liệu, ảnh hiện cỡ lớn. Bấm ✕ để quay về Tasks.</p>
 <figure><img src="img/06-xem-thay-doi.jpg" alt="Xem thay đổi"><figcaption>Nút "Thay đổi": dòng xanh là agent thêm vào, dòng đỏ là bỏ đi, so với lần lưu git gần nhất. Nếu file đã được lưu, bạn thấy thay đổi của lần lưu gần nhất.</figcaption></figure>
 
+<h3 id="ca-doi">👥 Cả đội</h3>
+<p>Nút <b>👥 Cả đội</b> ở đầu danh sách agent mở trang tổng quan. Mỗi agent là một thẻ cho biết đang làm việc, đang chờ bạn cho phép hay đang rảnh, đang giữ task nào và tin gần nhất là gì. Bấm vào thẻ để mở chat với agent đó.</p>
+<figure><img src="img/17-ca-doi.jpg" alt="Trang Cả đội"></figure>
+
+<h3 id="hoan-tac">Hoàn tác, tìm kiếm và cảnh báo trùng file</h3>
+<ul>
+  <li><b>↩ Hoàn tác:</b> dưới tin nhắn của agent có nút "Hoàn tác n file lượt này đã đổi". Bấm vào thì các file trở về như trước lượt đó, file mới tạo bị xoá. File đã bị sửa tiếp sau đó được giữ nguyên. Lịch sử git không bị xoá. Chỉ có ở project dùng git.</li>
+  <li><b>🔍 Tìm trong chat:</b> nút kính lúp trên khung chat tìm trong toàn bộ lịch sử với agent đang chọn. Bấm một kết quả để tới tin đó.</li>
+  <li><b>⚠️ Trùng file:</b> ở thư mục chung, khi hai agent cùng sửa một file trong lúc cả hai còn đang làm, dashboard báo ngay trong chat của agent đó và của Lead.</li>
+</ul>
+
 <h2 id="cai-dat-tab">7. Cài đặt</h2>
 <p>Mọi cài đặt nằm trong nút <b>⚙ Cài đặt</b> ở góc dưới cột trái, chia thành các tab bên trái.</p>
 
@@ -259,6 +272,8 @@ details summary{cursor:pointer;font-weight:600}
 <ul>
   <li><b>🔔 Báo:</b> bật tiếng và thông báo khi task xong, bị chặn, agent cần quyền hoặc Lead trả lời xong.</li>
   <li><b>Tự cuộn xuống cuối</b> và <b>cửa sổ "watch"</b> (chỉ kiểu Terminal).</li>
+  <li><b>Giao diện:</b> chọn nền Sáng, Tối, hoặc Theo máy.</li>
+  <li><b>🩺 Kiểm tra máy:</b> xem công cụ đã cài và đã đăng nhập chưa, kèm cách xử lý. Nút "Thử gọi thật" gửi cho agent một câu rất ngắn để chắc chắn agent trả lời được.</li>
   <li><b>⟳ Cập nhật</b> và <b>↻ Khởi động lại</b> (xem <a href="#hang-ngay">mục 3</a>).</li>
 </ul>
 

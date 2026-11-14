@@ -85,6 +85,9 @@ Nâng cấp chính Agent-Squad bằng agent: chọn project Agent-Squad trên da
     Nút "Hoàn tác" dưới tin nhắn của agent đưa các file lượt đó đã đổi về như trước; file mới tạo bị xoá, file đã bị sửa tiếp sau đó được giữ nguyên.
   - **⚠️ Trùng file** (thư mục chung, `dashboard/overlap.js`): khi hai agent cùng sửa một file trong lúc cả hai còn đang làm, dashboard báo ngay trong chat của agent đó và của Lead.
     Ở thư mục chung, commit tự động của dashboard chỉ gồm đúng các file của lượt đó, không gom thay đổi của agent khác.
+  - **👥 Cả đội** (kiểu Chat): nút đầu danh sách agent mở trang tổng quan, mỗi agent một thẻ (đang làm, chờ bạn cho phép hay rảnh, task đang giữ, tin gần nhất). Bấm thẻ để mở chat với agent đó.
+  - **🔍 Tìm trong chat**: nút kính lúp trên khung chat tìm trong toàn bộ lịch sử của agent đang chọn. **Giao diện** sáng / tối / theo máy đổi ở tab "Hệ thống".
+    Kiểu Terminal nằm sau nút "Kiểu khác…" ở tab "Cách làm việc" nếu project không dùng nó. Token theo task tính cả lượt Lead lập kế hoạch tạo ra task đó.
   - Kiểm thử: `node --test dashboard/test/*.test.js`.
   - **📊 Token**: số token mỗi agent đã dùng và tỉ lệ % theo Claude / Codex / Gemini (kiểu Chat, lưu ở `.agents/chat/usage.json`).
     Số lấy từ báo cáo của chính CLI sau mỗi lượt, tách thành Mới / Đệm (đọc lại từ bộ nhớ đệm) / Trả lời; cột "Quy đổi" = Mới + Đệm/10 + Trả lời

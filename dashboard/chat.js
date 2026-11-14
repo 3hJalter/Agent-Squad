@@ -584,6 +584,7 @@ module.exports = function setupChat({ on, send, readBody, getCtx, loadProjects, 
     const { cmd, args, stdin } = buildCmd(ctx, name, a, st.sessions[name], text, (st.grants || {})[name] || []);
     const msg = newMsg('agent', '', { steps: [], running: true, agent: a.agent, ...(useCm(ctx, a) ? { cm: true } : {}) });
     L.msg = msg; L.t0 = Date.now();
+    const tasksBefore = job.taskId || job.costTasks ? null : taskIds(ctx);
     // chụp thư mục làm việc trước lượt, để sau này hoàn tác được (project không dùng git thì bỏ qua)
     const preSnap = ctx.kind === 'office' || job.memorySave ? Promise.resolve('') : undo.snapshot(run, a.cwd).catch(() => '');
     const parse = makeParser(a.agent, msg, (sid) => { const s2 = loadState(ctx); s2.sessions[name] = sid; saveState(ctx, s2); });
@@ -649,7 +650,7 @@ module.exports = function setupChat({ on, send, readBody, getCtx, loadProjects, 
       let raw = null;
       try { raw = parse.done(); } catch { /* không bắt buộc */ }
       try { const cs = parse.ctxSize(); if (cs) { const s3 = loadState(ctx); s3.ctxSize = s3.ctxSize || {}; s3.ctxSize[name] = cs; saveState(ctx, s3); } } catch { /* không bắt buộc */ }
-      if (msg.usage) { try { addUsage(ctx, name, a, msg.usage, !!msg.cm, raw, job.taskId ? [job.taskId] : job.costTasks || []); } catch (e) { console.error('usage:', e.message); } }
+      if (msg.usage) { try { addUsage(ctx, name, a, msg.usage, !!msg.cm, raw, job.taskId ? [job.taskId] : job.costTasks || (tasksBefore ? [...taskIds(ctx)].filter((x) => !tasksBefore.has(x)) : [])); } catch (e) { console.error('usage:', e.message); } }
       addMessage(ctx, name, msg);
       if (after) after();
       try {
@@ -718,6 +719,8 @@ module.exports = function setupChat({ on, send, readBody, getCtx, loadProjects, 
     if (!c.ok) throw new Error((c.out + c.err).trim().slice(0, 400));
     return `💾 Dashboard đã commit ${st.out.trim().split('\n').length} file của lượt này.`;
   }
+  // các task đang có trong project (để biết lượt nào tạo ra task nào)
+  const taskIds = (ctx) => { try { return new Set(fs.readdirSync(path.join(ctx.root, '.agents', 'tasks')).map((f) => (f.match(/^(T-\d+)\.md$/) || [])[1]).filter(Boolean)); } catch { return new Set(); } };
   const taskStatus = (ctx, id) => { try { return (fs.readFileSync(path.join(ctx.root, '.agents', 'tasks', id + '.md'), 'utf8').match(/^Status:\s*(\S+)/m) || [])[1] || ''; } catch { return ''; } };
 
   // ------------------------------------------------------------ ảnh / file trong chat
@@ -785,7 +788,7 @@ module.exports = function setupChat({ on, send, readBody, getCtx, loadProjects, 
       r.in += v.in; r.out += v.out; r.cached += v.cached || 0; r.cost += v.cost || 0;
       if (model === main) { r.turns += 1; if (u.partial) r.partial = (r.partial || 0) + 1; }
     }
-    // token theo task: lượt worker làm task và lượt cấp trên đọc kết quả; một lượt báo nhiều task thì chia đều
+    // token theo task: lượt tạo ra task (lập kế hoạch), lượt worker làm task và lượt cấp trên đọc kết quả; một lượt báo nhiều task thì chia đều
     const ids = taskIds.filter((x) => /^T-\d+$/.test(x));
     if (ids.length) {
       all.tasks = all.tasks || {};
@@ -1190,7 +1193,9 @@ module.exports = function setupChat({ on, send, readBody, getCtx, loadProjects, 
         const lastMsg = messages(ctx, name).slice(-1)[0];
         // agent đang chờ bạn bấm "Cho phép"
         const wants = !L?.child && !!lastMsg?.grants?.length && !lastMsg.granted && !lastMsg.grants.every((g) => grants.includes(g.id));
-        return { name, agent: a.agent, model: a.model || '', effort: a.effort || '', helper: !!a.helper, account: a.account || '', busy: !!L?.child, queued: L?.queue.length || 0, grants, wants, ctx: (st.ctxSize || {})[name] || 0 };
+        const shown = L?.msg || lastMsg;
+        const last = shown ? { role: shown.role, ts: shown.ts, text: short(String(shown.text || shown.draft || shown.error || (shown.steps || []).slice(-1)[0]?.title || '').replace(/\s+/g, ' ').trim(), 200), error: !!shown.error } : null;
+        return { last, name, agent: a.agent, model: a.model || '', effort: a.effort || '', helper: !!a.helper, account: a.account || '', busy: !!L?.child, queued: L?.queue.length || 0, grants, wants, ctx: (st.ctxSize || {})[name] || 0 };
       }),
     };
   }
@@ -1298,6 +1303,25 @@ module.exports = function setupChat({ on, send, readBody, getCtx, loadProjects, 
     const L = live.get(key(ctx, name));
     const list = messages(ctx, name).slice(-150);
     send(res, 200, { messages: L?.msg ? [...list, L.msg] : list, busy: !!L?.child, queued: L?.queue.length || 0 });
+  });
+  on('GET', /^\/api\/chat\/([^/]+)\/search$/, (req, res, m, url) => {
+    const [name] = m; const ctx = getCtx(url);
+    if (!NAME_RE.test(name)) return send(res, 400, { error: 'Tên không hợp lệ' });
+    const q = String(url.searchParams.get('q') || '').trim().toLowerCase();
+    if (q.length < 2) return send(res, 200, { hits: [], total: 0 });
+    let lines = [];
+    try { lines = fs.readFileSync(path.join(dir(ctx), name + '.jsonl'), 'utf8').split('\n'); } catch { /* chưa có lịch sử */ }
+    const hits = []; let total = 0;
+    for (let i = lines.length - 1; i >= 0; i--) {
+      if (!lines[i] || !lines[i].toLowerCase().includes(q)) continue; // lọc nhanh trước khi đọc JSON
+      let x; try { x = JSON.parse(lines[i]); } catch { continue; }
+      const text = String(x.text || x.error || '');
+      const at = text.toLowerCase().indexOf(q);
+      if (at < 0) continue;
+      total++;
+      if (hits.length < 40) hits.push({ id: x.id, role: x.role, ts: x.ts, before: text.slice(Math.max(0, at - 80), at), hit: text.slice(at, at + q.length), after: text.slice(at + q.length, at + q.length + 160) });
+    }
+    send(res, 200, { hits, total });
   });
   on('POST', /^\/api\/chat\/([^/]+)\/send$/, async (req, res, m, url) => {
     const [name] = m; const ctx = getCtx(url);
