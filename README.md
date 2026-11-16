@@ -2,6 +2,8 @@
 
 Khung điều phối nhiều agent (lead + workers) để tiết kiệm token.
 
+📘 **Hướng dẫn sử dụng chi tiết (có ảnh): [`docs/huong-dan.html`](docs/huong-dan.html)**. Mở file này bằng trình duyệt (double-click trong thư mục repo).
+
 **Trên Windows (sau khi đã chạy xong 1→3 trong `windows/`): double-click `Agent-Squad.bat`.**
 Cập nhật bản mới: double-click `Update.bat` (hoặc nút "⟳ Cập nhật" trên dashboard).
 File này cập nhật code trong WSL và mở dashboard thành cửa sổ riêng; bấm "Start agents" trên dashboard để bật agent.
@@ -74,6 +76,19 @@ Nâng cấp chính Agent-Squad bằng agent: chọn project Agent-Squad trên da
     Không dùng Codex cho agent này vì sandbox của Codex không ghi được `.git`.
   - **🤖 Đội agent**: trước khi Start là bảng chọn Lead và worker; khi đang chạy là cây phân cấp, kéo thả để đổi cấp trên (ghi vào `.agents/hierarchy.txt`); ở kiểu Chat còn thêm,
     đổi tên, đổi model/effort và xoá agent (cấp dưới chuyển lên cấp trên, task đang giữ về Todo, worktree được giữ lại).
+  - **Tiết kiệm token**: khi task xong hoặc bị chặn, dashboard chép sẵn phần Result vào tin báo cho cấp trên (không phải mở file) và gộp
+    các task xong cùng lúc vào một tin. Thẻ task hiện số token quy đổi đã dùng cho task đó. Bảng "Đội agent" có nút điền nhanh
+    Tiết kiệm / Cân bằng / Mạnh (chỉ điền vào bảng, bạn vẫn bấm Lưu).
+  - **🩺 Kiểm tra máy** (tab "Hệ thống", `dashboard/health.js`): xem Node, git, Claude, Codex, Gemini, tmux đã cài và đã đăng nhập chưa, kèm cách xử lý.
+    "Thử gọi thật" gửi cho agent một câu rất ngắn (tốn vài token) để chắc agent trả lời được.
+  - **↩ Hoàn tác** (kiểu Chat, project có git, `dashboard/undo.js`): dashboard chụp thư mục làm việc trước và sau mỗi lượt (không đụng index hay lịch sử commit).
+    Nút "Hoàn tác" dưới tin nhắn của agent đưa các file lượt đó đã đổi về như trước; file mới tạo bị xoá, file đã bị sửa tiếp sau đó được giữ nguyên.
+  - **⚠️ Trùng file** (thư mục chung, `dashboard/overlap.js`): khi hai agent cùng sửa một file trong lúc cả hai còn đang làm, dashboard báo ngay trong chat của agent đó và của Lead.
+    Ở thư mục chung, commit tự động của dashboard chỉ gồm đúng các file của lượt đó, không gom thay đổi của agent khác.
+  - **👥 Cả đội** (kiểu Chat): nút đầu danh sách agent mở trang tổng quan, mỗi agent một thẻ (đang làm, chờ bạn cho phép hay rảnh, task đang giữ, tin gần nhất). Bấm thẻ để mở chat với agent đó.
+  - **🔍 Tìm trong chat**: nút kính lúp trên khung chat tìm trong toàn bộ lịch sử của agent đang chọn. **Giao diện** sáng / tối / theo máy đổi ở tab "Hệ thống".
+    Kiểu Terminal nằm sau nút "Kiểu khác…" ở tab "Cách làm việc" nếu project không dùng nó. Token theo task tính cả lượt Lead lập kế hoạch tạo ra task đó.
+  - Kiểm thử: `node --test dashboard/test/*.test.js`.
   - **📊 Token**: số token mỗi agent đã dùng và tỉ lệ % theo Claude / Codex / Gemini (kiểu Chat, lưu ở `.agents/chat/usage.json`).
     Số lấy từ báo cáo của chính CLI sau mỗi lượt, tách thành Mới / Đệm (đọc lại từ bộ nhớ đệm) / Trả lời; cột "Quy đổi" = Mới + Đệm/10 + Trả lời
     và % tính theo cột này. Claude: chia theo model thực chạy (gồm agent phụ), lượt bị dừng vẫn cộng phần đã dùng (đánh dấu ước tính).

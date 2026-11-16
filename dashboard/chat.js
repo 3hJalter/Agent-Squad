@@ -167,6 +167,8 @@ const noLink = (a) => a?.agent === 'codex';
 // merge nhánh chính vào worktree trước khi giao việc, và commit thay đổi sau mỗi lượt.
 const gitByDashboard = (ctx, name, a) => ctx.kind !== 'office' && name !== 'lead' && a?.agent === 'codex';
 
+const undo = require('./undo');
+const overlap = require('./overlap');
 module.exports = function setupChat({ on, send, readBody, getCtx, loadProjects, loadAccounts, withCtx, run }) {
   let noPartial = false; // bản Claude Code cũ không có --include-partial-messages: tắt chữ hiện dần
   const live = new Map(); // key root|name -> { child, msg, queue: [] }
@@ -573,12 +575,23 @@ module.exports = function setupChat({ on, send, readBody, getCtx, loadProjects, 
       text = READ_MEMORY(handoffFile(ctx, name)) + text;
       delete st.handoffRead[name]; saveState(ctx, st);
     }
+    if ((st.undoNote || {})[name]) {
+      if (st.sessions[name]) text = `NOTE: the human undid the file changes of one of your earlier turns (${st.undoNote[name]}). Those files are back to how they were before that turn; re-read a file before editing it.\n\n` + text;
+      delete st.undoNote[name]; saveState(ctx, st);
+    }
     // mọi cuộc trò chuyện mới đều nhận bộ nhớ chung của project
     if (!st.sessions[name] && !job.memorySave) { const mem = readMemory(ctx); if (mem.trim()) text = PROJECT_MEMORY(mem) + text; }
     const { cmd, args, stdin } = buildCmd(ctx, name, a, st.sessions[name], text, (st.grants || {})[name] || []);
     const msg = newMsg('agent', '', { steps: [], running: true, agent: a.agent, ...(useCm(ctx, a) ? { cm: true } : {}) });
-    L.msg = msg;
+    L.msg = msg; L.t0 = Date.now();
+    const tasksBefore = job.taskId || job.costTasks ? null : taskIds(ctx);
+    // chụp thư mục làm việc trước lượt, để sau này hoàn tác được (project không dùng git thì bỏ qua)
+    const preSnap = ctx.kind === 'office' || job.memorySave ? Promise.resolve('') : undo.snapshot(run, a.cwd).catch(() => '');
     const parse = makeParser(a.agent, msg, (sid) => { const s2 = loadState(ctx); s2.sessions[name] = sid; saveState(ctx, s2); });
+    // đợi chụp xong rồi mới chạy agent (trong lúc đó coi như đang bận), để bản chụp chắc chắn là trước khi agent sửa gì
+    L.committing = true;
+    preSnap.then(() => { L.committing = false; launch(); });
+    function launch() {
     let child;
     try {
       // detached: agent và mọi lệnh con của nó cùng một nhóm tiến trình, để nút Dừng tắt được hết
@@ -609,7 +622,9 @@ module.exports = function setupChat({ on, send, readBody, getCtx, loadProjects, 
       else if (code && !msg.error) msg.error = short(errTail.trim() || `Agent thoát với mã ${code}${signal ? ' (' + signal + ')' : ''}`, 800);
       finish();
     });
+    }
     async function finish() {
+      let turnFiles = [];
       delete msg.running; delete msg.draft; L.child = null; L.msg = null; L.stopped = false;
       if (!msg.text && !msg.error && !msg.steps.length) msg.text = '(không có trả lời)';
       try { const fl = filesOf(ctx, a, msg); if (fl.length) msg.files = fl; } catch { /* không bắt buộc */ }
@@ -635,13 +650,41 @@ module.exports = function setupChat({ on, send, readBody, getCtx, loadProjects, 
       let raw = null;
       try { raw = parse.done(); } catch { /* không bắt buộc */ }
       try { const cs = parse.ctxSize(); if (cs) { const s3 = loadState(ctx); s3.ctxSize = s3.ctxSize || {}; s3.ctxSize[name] = cs; saveState(ctx, s3); } } catch { /* không bắt buộc */ }
-      if (msg.usage) { try { addUsage(ctx, name, a, msg.usage, !!msg.cm, raw); } catch (e) { console.error('usage:', e.message); } }
+      if (msg.usage) { try { addUsage(ctx, name, a, msg.usage, !!msg.cm, raw, job.taskId ? [job.taskId] : job.costTasks || (tasksBefore ? [...taskIds(ctx)].filter((x) => !tasksBefore.has(x)) : [])); } catch (e) { console.error('usage:', e.message); } }
       addMessage(ctx, name, msg);
       if (after) after();
+      try {
+        const pre = await preSnap;
+        if (pre) {
+          const post = await undo.snapshot(run, a.cwd);
+          turnFiles = (await undo.changed(run, a.cwd, pre, post)).map((x) => x.file);
+          const n = turnFiles.length;
+          if (n) { msg.snap = { pre, post, cwd: a.cwd, files: n }; rewrite(ctx, name); }
+        }
+      } catch { /* không hoàn tác được lượt này, không sao */ }
+      // thư mục chung: báo khi lượt này sửa file mà một agent khác đang làm dở cũng đã sửa
+      if (turnFiles.length && ctx.kind !== 'office' && !usesWt(ctx, a)) {
+        try {
+          const st4 = loadState(ctx);
+          st4.touched = st4.touched || {};
+          // agent kia còn tính là đang làm nếu: đang chạy, task còn dở, hoặc vừa sửa file trong lúc lượt này đang chạy
+          const active = (other, task, at) => !!st4.agents[other] && (isBusy(ctx, other) || at >= (L.t0 || Infinity) || (!!task && taskStatus(ctx, task) === 'in-progress'));
+          const clashes = overlap.record(st4.touched, name, job.taskId || '', turnFiles, active);
+          saveState(ctx, st4);
+          if (clashes.length) {
+            const by = {};
+            for (const c of clashes) (by[c.other] = by[c.other] || []).push(c.file);
+            const txt = Object.entries(by).map(([o, fl]) => `${o} (${fl.slice(0, 4).join(', ')}${fl.length > 4 ? '…' : ''})`).join('; ');
+            const warn = `⚠️ ${name} vừa sửa file mà agent khác cũng đang sửa: ${txt}. Hai agent có thể ghi đè lên nhau. Nên để một agent làm xong rồi agent kia mới sửa tiếp.`;
+            addMessage(ctx, name, newMsg('system', warn));
+            if (name !== 'lead' && st4.agents.lead) addMessage(ctx, 'lead', newMsg('system', warn));
+          }
+        } catch { /* chỉ là cảnh báo */ }
+      }
       if (gitByDashboard(ctx, name, a)) {
         L.committing = true;
         try {
-          const c = await autoCommit(a.cwd, `${job.taskId || 'work'}: changes by ${name}`);
+          const c = await autoCommit(a.cwd, `${job.taskId || 'work'}: changes by ${name}`, !usesWt(ctx, a) && turnFiles.length && turnFiles.length <= 200 ? turnFiles : null);
           if (c) addMessage(ctx, name, newMsg('system', c));
         } catch (e) { addMessage(ctx, name, newMsg('system', 'Không commit được: ' + e.message)); }
         L.committing = false;
@@ -651,7 +694,8 @@ module.exports = function setupChat({ on, send, readBody, getCtx, loadProjects, 
   }
 
   // commit mọi thay đổi trong worktree (trừ .agents); trả về câu báo hoặc '' nếu không có gì
-  async function autoCommit(cwd, message) {
+  async function autoCommit(cwd, message, only = null) {
+    if (only) return commitOnly(cwd, message, only);
     const st = await run('git', ['-C', cwd, 'status', '--porcelain', '--', '.', ':(exclude).agents']);
     if (!st.ok || !st.out.trim()) return '';
     const id = await run('git', ['-C', cwd, 'config', 'user.email']);
@@ -662,6 +706,22 @@ module.exports = function setupChat({ on, send, readBody, getCtx, loadProjects, 
     return `💾 Dashboard đã commit thay đổi của lượt này (${st.out.trim().split('\n').length} file).`;
   }
 
+
+  // thư mục chung: chỉ commit đúng các file của lượt này (đường dẫn tính từ gốc repo), không gom thay đổi của agent khác
+  async function commitOnly(cwd, message, files) {
+    const spec = files.map((f) => ':(top,literal)' + f);
+    const st = await run('git', ['-C', cwd, 'status', '--porcelain', '--', ...spec]);
+    if (!st.ok || !st.out.trim()) return '';
+    const id = await run('git', ['-C', cwd, 'config', 'user.email']);
+    const who = id.out.trim() ? [] : ['-c', 'user.name=Agent-Squad', '-c', 'user.email=agent-squad@localhost'];
+    await run('git', ['-C', cwd, 'add', '-A', '--', ...spec]);
+    const c = await run('git', ['-C', cwd, ...who, 'commit', '-m', message, '--only', '--', ...spec]);
+    if (!c.ok) throw new Error((c.out + c.err).trim().slice(0, 400));
+    return `💾 Dashboard đã commit ${st.out.trim().split('\n').length} file của lượt này.`;
+  }
+  // các task đang có trong project (để biết lượt nào tạo ra task nào)
+  const taskIds = (ctx) => { try { return new Set(fs.readdirSync(path.join(ctx.root, '.agents', 'tasks')).map((f) => (f.match(/^(T-\d+)\.md$/) || [])[1]).filter(Boolean)); } catch { return new Set(); } };
+  const taskStatus = (ctx, id) => { try { return (fs.readFileSync(path.join(ctx.root, '.agents', 'tasks', id + '.md'), 'utf8').match(/^Status:\s*(\S+)/m) || [])[1] || ''; } catch { return ''; } };
 
   // ------------------------------------------------------------ ảnh / file trong chat
   const IMG_RE = /\.(png|jpe?g|gif|webp|bmp|svg)$/i;
@@ -715,7 +775,7 @@ module.exports = function setupChat({ on, send, readBody, getCtx, loadProjects, 
     try { const u = JSON.parse(fs.readFileSync(usageFile(ctx), 'utf8')); if (u && typeof u.days === 'object') return u; } catch { /* chưa có */ }
     return { days: {} };
   }
-  function addUsage(ctx, name, a, u, cm, raw) {
+  function addUsage(ctx, name, a, u, cm, raw, taskIds = []) {
     const accId = accountOf(a) ? a.account : '';
     const all = loadUsage(ctx);
     const day = all.days[dayKey()] || (all.days[dayKey()] = {});
@@ -727,6 +787,15 @@ module.exports = function setupChat({ on, send, readBody, getCtx, loadProjects, 
       const r = day[k] || (day[k] = { in: 0, out: 0, cached: 0, cost: 0, turns: 0 });
       r.in += v.in; r.out += v.out; r.cached += v.cached || 0; r.cost += v.cost || 0;
       if (model === main) { r.turns += 1; if (u.partial) r.partial = (r.partial || 0) + 1; }
+    }
+    // token theo task: lượt tạo ra task (lập kế hoạch), lượt worker làm task và lượt cấp trên đọc kết quả; một lượt báo nhiều task thì chia đều
+    const ids = taskIds.filter((x) => /^T-\d+$/.test(x));
+    if (ids.length) {
+      all.tasks = all.tasks || {};
+      for (const id of ids) {
+        const t = all.tasks[id] || (all.tasks[id] = { in: 0, out: 0, cached: 0, cost: 0, turns: 0 });
+        t.in += u.in / ids.length; t.out += u.out / ids.length; t.cached += (u.cached || 0) / ids.length; t.cost += (u.cost || 0) / ids.length; t.turns += 1;
+      }
     }
     if (raw) { all.last = all.last || {}; all.last[name] = { ts: Date.now(), agent: a.agent, raw: short(JSON.stringify(raw, null, 1), 3000) }; }
     fs.mkdirSync(dir(ctx), { recursive: true });
@@ -1117,14 +1186,16 @@ module.exports = function setupChat({ on, send, readBody, getCtx, loadProjects, 
   function info(ctx) {
     const st = loadState(ctx);
     return {
-      active: !!st.active,
+      active: !!st.active, taskUsage: loadUsage(ctx).tasks || {},
       agents: Object.entries(st.agents || {}).map(([name, a]) => {
         const L = live.get(key(ctx, name));
         const grants = (st.grants || {})[name] || [];
         const lastMsg = messages(ctx, name).slice(-1)[0];
         // agent đang chờ bạn bấm "Cho phép"
         const wants = !L?.child && !!lastMsg?.grants?.length && !lastMsg.granted && !lastMsg.grants.every((g) => grants.includes(g.id));
-        return { name, agent: a.agent, model: a.model || '', effort: a.effort || '', helper: !!a.helper, account: a.account || '', busy: !!L?.child, queued: L?.queue.length || 0, grants, wants, ctx: (st.ctxSize || {})[name] || 0 };
+        const shown = L?.msg || lastMsg;
+        const last = shown ? { role: shown.role, ts: shown.ts, text: short(String(shown.text || shown.draft || shown.error || (shown.steps || []).slice(-1)[0]?.title || '').replace(/\s+/g, ' ').trim(), 200), error: !!shown.error } : null;
+        return { last, name, agent: a.agent, model: a.model || '', effort: a.effort || '', helper: !!a.helper, account: a.account || '', busy: !!L?.child, queued: L?.queue.length || 0, grants, wants, ctx: (st.ctxSize || {})[name] || 0 };
       }),
     };
   }
@@ -1152,6 +1223,7 @@ module.exports = function setupChat({ on, send, readBody, getCtx, loadProjects, 
       try { files = fs.readdirSync(tdir).filter((f) => /^T-\d+\.md$/.test(f)); } catch { continue; }
       const first = !seen.has(ctx.root);
       const last = seen.get(ctx.root) || {};
+      const reports = {};
       for (const f of files) {
         const id = f.slice(0, -3), fp = path.join(tdir, f);
         let text;
@@ -1202,13 +1274,22 @@ module.exports = function setupChat({ on, send, readBody, getCtx, loadProjects, 
           if (Lo && (Lo.child || Lo.committing)) continue;
           // báo người tạo task (dòng "Created by:", như scripts/notify.sh); không có agent đó thì báo lead
           const to = st.agents[creator] ? creator : 'lead';
-          const file = noLink(st.agents[to]) ? path.join(ctx.root, '.agents', 'tasks', id + '.md') : `.agents/tasks/${id}.md`;
           if (st.agents[to]) {
-            enqueue(ctx, to, `Worker updated ${id}. Read only its Status and Result in ${file}, then report ${to === 'lead' ? 'to me' : 'and continue your own task'} in 3 lines max.`,
-              { role: 'system', text: `🔔 ${id} ${status === 'done' ? 'đã xong' : 'bị chặn'} (${owner}). ${to === 'lead' ? 'Lead' : to} đang đọc kết quả…` });
+            // phần Result (và Notes nếu bị chặn) được chép sẵn vào tin, để cấp trên không tốn thêm lượt gọi công cụ đọc file
+            const sec = (re) => ((text.split(/^## /m).find((x) => re.test(x)) || '').split('\n').slice(1).join('\n').trim());
+            const body = [sec(/^Result/i) && 'Result:\n' + sec(/^Result/i), status === 'blocked' && sec(/^Notes/i) && 'Notes / questions:\n' + sec(/^Notes/i)].filter(Boolean).join('\n');
+            (reports[to] = reports[to] || []).push({ id, status, owner, body: short(body, 1500) });
           }
         }
         last[id] = status;
+      }
+      for (const [to, list] of Object.entries(reports)) {
+        const tdirShown = noLink(st.agents[to]) ? tdir : '.agents/tasks';
+        const txt = list.map((r) => `- ${r.id}: Status ${r.status} (worker ${r.owner}).${r.body ? '\n' + r.body : ' The worker left Result empty.'}`).join('\n');
+        enqueue(ctx, to, `Worker update:\n${txt}\n\nThe text above is copied from the task file${list.length > 1 ? 's' : ''} in ${tdirShown}, so do not open ${list.length > 1 ? 'them' : 'it'} unless something is unclear. ` +
+          `Report ${to === 'lead' ? 'to me' : 'and continue your own task'} in 3 lines max${list.length > 1 ? ' per task' : ''}.`,
+        { role: 'system', text: `🔔 ${list.map((r) => `${r.id} ${r.status === 'done' ? 'đã xong' : 'bị chặn'} (${r.owner})`).join(', ')}. ${to === 'lead' ? 'Lead' : to} đang đọc kết quả…` },
+        { costTasks: list.map((r) => r.id) });
       }
       seen.set(ctx.root, last);
     }
@@ -1222,6 +1303,25 @@ module.exports = function setupChat({ on, send, readBody, getCtx, loadProjects, 
     const L = live.get(key(ctx, name));
     const list = messages(ctx, name).slice(-150);
     send(res, 200, { messages: L?.msg ? [...list, L.msg] : list, busy: !!L?.child, queued: L?.queue.length || 0 });
+  });
+  on('GET', /^\/api\/chat\/([^/]+)\/search$/, (req, res, m, url) => {
+    const [name] = m; const ctx = getCtx(url);
+    if (!NAME_RE.test(name)) return send(res, 400, { error: 'Tên không hợp lệ' });
+    const q = String(url.searchParams.get('q') || '').trim().toLowerCase();
+    if (q.length < 2) return send(res, 200, { hits: [], total: 0 });
+    let lines = [];
+    try { lines = fs.readFileSync(path.join(dir(ctx), name + '.jsonl'), 'utf8').split('\n'); } catch { /* chưa có lịch sử */ }
+    const hits = []; let total = 0;
+    for (let i = lines.length - 1; i >= 0; i--) {
+      if (!lines[i] || !lines[i].toLowerCase().includes(q)) continue; // lọc nhanh trước khi đọc JSON
+      let x; try { x = JSON.parse(lines[i]); } catch { continue; }
+      const text = String(x.text || x.error || '');
+      const at = text.toLowerCase().indexOf(q);
+      if (at < 0) continue;
+      total++;
+      if (hits.length < 40) hits.push({ id: x.id, role: x.role, ts: x.ts, before: text.slice(Math.max(0, at - 80), at), hit: text.slice(at, at + q.length), after: text.slice(at + q.length, at + q.length + 160) });
+    }
+    send(res, 200, { hits, total });
   });
   on('POST', /^\/api\/chat\/([^/]+)\/send$/, async (req, res, m, url) => {
     const [name] = m; const ctx = getCtx(url);
@@ -1243,6 +1343,28 @@ module.exports = function setupChat({ on, send, readBody, getCtx, loadProjects, 
       enqueue(ctx, name, prompt, { role: 'you', text, files });
     } else enqueue(ctx, name, text);
     send(res, 200, { ok: true });
+  });
+  on('POST', /^\/api\/chat\/([^/]+)\/undo$/, async (req, res, m, url) => {
+    const [name] = m; const ctx = getCtx(url);
+    if (!NAME_RE.test(name)) return send(res, 400, { error: 'Tên không hợp lệ' });
+    const b = await readBody(req);
+    const L = live.get(key(ctx, name));
+    if (L && (L.child || L.committing)) return send(res, 409, { error: 'Agent đang làm việc. Chờ xong hoặc bấm Dừng rồi hoàn tác.' });
+    const msg = messages(ctx, name).find((x) => x.id === b.msgId);
+    if (!msg || !msg.snap || msg.undone) return send(res, 400, { error: 'Lượt này không hoàn tác được (không có bản chụp, hoặc đã hoàn tác rồi).' });
+    try {
+      const r = await undo.undoTurn(run, msg.snap.cwd, msg.snap.pre, msg.snap.post);
+      msg.undone = { restored: r.restored.length, skipped: r.skipped.slice(0, 20) };
+      rewrite(ctx, name);
+      let note = `↩ Đã hoàn tác ${r.restored.length} file của lượt này.` + (r.skipped.length ? ` Giữ nguyên ${r.skipped.length} file vì đã bị sửa tiếp sau đó: ${r.skipped.slice(0, 5).join(', ')}${r.skipped.length > 5 ? '…' : ''}.` : '');
+      const st = loadState(ctx), a = st.agents[name];
+      if (r.restored.length) {
+        st.undoNote = st.undoNote || {}; st.undoNote[name] = short(r.restored.join(', '), 600); saveState(ctx, st);
+        if (a && gitByDashboard(ctx, name, a)) { try { const c = await autoCommit(msg.snap.cwd, `undo: revert a turn of ${name}`); if (c) note += ' ' + c; } catch { /* để nguyên chưa commit */ } }
+      }
+      addMessage(ctx, name, newMsg('system', note));
+      send(res, 200, { ok: true, ...r });
+    } catch (e) { send(res, 500, { error: e.message }); }
   });
   on('POST', /^\/api\/chat\/([^/]+)\/stop$/, (req, res, m, url) => {
     const [name] = m; const ctx = getCtx(url);
@@ -1371,3 +1493,4 @@ module.exports = function setupChat({ on, send, readBody, getCtx, loadProjects, 
 
   return { start, stopAll, info, listRequests, killAll, busyCount, toShared, resolveFile, MAX_FILE, resourceInfo, isActive: (ctx) => !!loadState(ctx).active };
 };
+module.exports._test = { prefixesOf, cmdLabel, sayCmd, bareShell };

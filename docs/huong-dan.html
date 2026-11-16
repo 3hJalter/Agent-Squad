@@ -1,0 +1,340 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Hướng dẫn Agent-Squad</title>
+<style>
+:root{--bg:#faf9f5;--panel:#fff;--side:#f3f1ea;--line:#e3dfd3;--text:#29261f;--muted:#6f6b63;--accent:#c96442;--soft:#f6e9e2;--ok:#2f7d4a;--warn:#9a5b12;--code:#efece3}
+@media (prefers-color-scheme: dark){:root{--bg:#1f1e1b;--panel:#292824;--side:#252420;--line:#3a3833;--text:#ece9e1;--muted:#a9a59b;--accent:#d97757;--soft:#3a2b24;--ok:#7cc493;--warn:#e0a85a;--code:#33312c}}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth;scroll-padding-top:16px}
+body{margin:0;background:var(--bg);color:var(--text);font:16px/1.65 system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif}
+a{color:var(--accent)}
+.wrap{display:grid;grid-template-columns:260px minmax(0,1fr);max-width:1240px;margin:0 auto}
+nav.toc{position:sticky;top:0;height:100vh;overflow:auto;padding:28px 18px;border-right:1px solid var(--line);background:var(--side)}
+nav.toc b{display:block;font-size:18px;margin-bottom:12px}
+nav.toc a{display:block;color:var(--text);text-decoration:none;padding:4px 8px;border-radius:6px;font-size:14px}
+nav.toc a.sub{padding-left:22px;color:var(--muted);font-size:13px}
+nav.toc a:hover{background:var(--line)}
+main{padding:36px 48px 80px;min-width:0}
+h1{font-size:32px;margin:0 0 6px}
+h2{font-size:24px;margin:56px 0 10px;padding-top:8px;border-top:1px solid var(--line)}
+h3{font-size:18px;margin:30px 0 6px}
+p,li{max-width:760px}
+.lead{color:var(--muted);font-size:17px;margin-top:0}
+code,kbd{font:13px/1.4 ui-monospace,SFMono-Regular,Consolas,monospace;background:var(--code);padding:1px 5px;border-radius:4px}
+kbd{border:1px solid var(--line);border-bottom-width:2px}
+figure{margin:18px 0 26px}
+figure img{width:100%;max-width:1000px;border:1px solid var(--line);border-radius:10px;display:block;box-shadow:0 2px 10px rgba(0,0,0,.06)}
+figcaption{color:var(--muted);font-size:14px;margin-top:6px;max-width:1000px}
+.steps{counter-reset:s;list-style:none;padding:0}
+.steps>li{counter-increment:s;position:relative;padding-left:44px;margin:12px 0}
+.steps>li::before{content:counter(s);position:absolute;left:0;top:0;width:30px;height:30px;border-radius:50%;background:var(--accent);color:#fff;display:grid;place-items:center;font-weight:600;font-size:14px}
+.note,.tip,.warn{border-left:4px solid var(--accent);background:var(--soft);padding:10px 14px;border-radius:0 8px 8px 0;margin:14px 0;max-width:760px}
+.tip{border-color:var(--ok)}
+.warn{border-color:var(--warn)}
+.note b:first-child,.tip b:first-child,.warn b:first-child{margin-right:4px}
+table{border-collapse:collapse;margin:12px 0;max-width:900px;width:100%;font-size:15px}
+th,td{border:1px solid var(--line);padding:7px 10px;text-align:left;vertical-align:top}
+th{background:var(--side)}
+.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:12px;max-width:900px;margin:14px 0}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:12px 14px}
+.card b{display:block;margin-bottom:4px}
+.card span{color:var(--muted);font-size:14px}
+details{max-width:760px;border:1px solid var(--line);border-radius:8px;padding:8px 12px;margin:8px 0;background:var(--panel)}
+details summary{cursor:pointer;font-weight:600}
+.menu{display:none}
+@media (max-width:860px){
+  .wrap{display:block}
+  nav.toc{position:static;height:auto;border-right:0;border-bottom:1px solid var(--line);padding:16px}
+  nav.toc a.sub{display:none}
+  main{padding:20px 16px 60px}
+  h1{font-size:26px}
+}
+</style>
+</head>
+<body>
+<div class="wrap">
+<nav class="toc">
+  <b>📘 Agent-Squad</b>
+  <a href="#gioi-thieu">1. Agent-Squad là gì</a>
+  <a href="#cai-dat">2. Cài đặt lần đầu</a>
+  <a href="#hang-ngay">3. Mở và cập nhật</a>
+  <a href="#project">4. Project</a>
+  <a href="#bat-dau">5. Bắt đầu một việc</a>
+  <a href="#man-hinh">6. Màn hình chính</a>
+  <a class="sub" href="#chat">Khung chat</a>
+  <a class="sub" href="#tasks">Bảng Tasks</a>
+  <a class="sub" href="#quyen-chat">Agent xin quyền</a>
+  <a class="sub" href="#loi">Khi agent gặp lỗi</a>
+  <a class="sub" href="#xem-file">Xem file và thay đổi</a>
+  <a class="sub" href="#ca-doi">Cả đội</a>
+  <a class="sub" href="#hoan-tac">Hoàn tác, tìm kiếm</a>
+  <a href="#cai-dat-tab">7. Cài đặt</a>
+  <a class="sub" href="#doi-agent">Đội agent</a>
+  <a class="sub" href="#cach-lam-viec">Cách làm việc</a>
+  <a class="sub" href="#tab-quyen">Quyền</a>
+  <a class="sub" href="#bo-nho">Bộ nhớ</a>
+  <a class="sub" href="#tai-khoan">Tài khoản</a>
+  <a class="sub" href="#tai-nguyen">Tài nguyên</a>
+  <a class="sub" href="#token">Token</a>
+  <a class="sub" href="#he-thong">Hệ thống</a>
+  <a href="#tiet-kiem">8. Tiết kiệm token</a>
+  <a href="#hoi-dap">9. Hỏi đáp và sự cố</a>
+  <a href="#phu-luc">10. Phụ lục</a>
+</nav>
+<main>
+<h1>Hướng dẫn sử dụng Agent-Squad</h1>
+<p class="lead">Một đội agent AI (Claude Code, Codex, Gemini CLI) cùng làm một project cho bạn, điều khiển hoàn toàn từ một trang web trên máy. Bạn chỉ cần nhắn việc, bấm cho phép khi cần và xem kết quả.</p>
+
+<h2 id="gioi-thieu">1. Agent-Squad là gì</h2>
+<p>Thay vì một agent làm tất cả, Agent-Squad chia thành một <b>đội</b>:</p>
+<div class="cards">
+  <div class="card"><b>👑 Lead</b><span>Nói chuyện với bạn, chia yêu cầu thành các việc nhỏ (task), giao cho worker và báo lại kết quả. Lead không tự sửa code.</span></div>
+  <div class="card"><b>🛠 Worker</b><span>Mỗi worker nhận một task, chỉ đọc và sửa những file trong phạm vi task, làm xong thì ghi kết quả vào task.</span></div>
+  <div class="card"><b>📋 Task</b><span>File <code>.agents/tasks/T-1.md</code>, <code>T-2.md</code>... ghi mục tiêu, file được sửa, kết quả. Đây là "sổ giao việc" chung của cả đội.</span></div>
+  <div class="card"><b>🖥 Dashboard</b><span>Trang web ở <code>http://localhost:7070</code>: chat với từng agent, xem bảng task, cài đặt, thống kê token.</span></div>
+</div>
+<p>Cách chia này <b>tiết kiệm token</b>: Lead chỉ đọc tóm tắt chứ không đọc code, mỗi worker chỉ đọc đúng phần việc của mình. Bạn có thể dùng model nhẹ cho Lead và model mạnh cho worker, hoặc trộn Claude với Codex.</p>
+
+<h2 id="cai-dat">2. Cài đặt lần đầu (Windows)</h2>
+<p>Agent-Squad chạy trong Ubuntu (WSL2) trên Windows. Các file cài đặt nằm trong thư mục <code>windows\</code> của repo. Làm lần lượt:</p>
+<ol class="steps">
+  <li><b>Double-click <code>windows\1-install-wsl.bat</code></b> để cài WSL và Ubuntu. Xong thì <b>khởi động lại máy</b>, mở "Ubuntu" từ menu Start và đặt tên đăng nhập, mật khẩu Linux.</li>
+  <li><b>Double-click <code>windows\2-setup-tools.bat</code></b> để cài công cụ trong Ubuntu (Node.js, git, tmux, Claude Code, Codex...). Nó sẽ hỏi mật khẩu Linux bạn vừa đặt.</li>
+  <li><b>Double-click <code>windows\3-login.bat</code></b> để đăng nhập. Claude: làm theo hướng dẫn trên màn hình, xong gõ <code>/exit</code>. Codex: chọn "Sign in with ChatGPT", xong thì thoát.</li>
+  <li><b>Double-click <code>Agent-Squad.bat</code></b> ở thư mục gốc. Dashboard mở thành một cửa sổ riêng.</li>
+</ol>
+<div class="note"><b>Lưu ý:</b> sẽ có một cửa sổ thu nhỏ tên <b>"Agent-Squad server"</b> trên taskbar. Hãy để nguyên nó; đóng cửa sổ này là tắt dashboard và các agent.</div>
+<div class="tip"><b>Ổ C: đầy?</b> Đóng dashboard, rồi chạy <code>windows\5-move-wsl-to-D.bat</code> để chuyển cả Ubuntu (project, công cụ) sang <code>D:\WSL\Ubuntu</code>. Dữ liệu được giữ nguyên.</div>
+
+<h2 id="hang-ngay">3. Mở và cập nhật hằng ngày</h2>
+<ul>
+  <li><b>Mở:</b> double-click <code>Agent-Squad.bat</code>. File này tự tải bản mới trong Ubuntu rồi mở dashboard.</li>
+  <li><b>Cập nhật bản mới:</b> trong dashboard bấm <b>⚙ Cài đặt › 🖥 Hệ thống › ⟳ Cập nhật</b>, hoặc double-click <code>Update.bat</code>. Agent đang chạy không bị ảnh hưởng.</li>
+  <li><b>Khởi động lại:</b> <b>⚙ Cài đặt › 🖥 Hệ thống › ↻ Khởi động lại</b>. Dashboard chạy thử bản mới trước; nếu bản mới lỗi thì giữ nguyên bản đang chạy.</li>
+</ul>
+<div class="note"><b>Mẹo:</b> project để trong Ubuntu (thư mục Home) chạy nhanh hơn nhiều so với để ở ổ <code>C:</code> hay <code>D:</code>. Từ Windows, mở thư mục Ubuntu bằng đường dẫn <code>\\wsl$\Ubuntu\home\&lt;tên bạn&gt;</code>.</div>
+
+<h2 id="project">4. Project</h2>
+<p>Mỗi project là một thư mục làm việc, có đội agent và lịch sử chat riêng. Nhiều project chạy song song được. Chọn project ở ô trên cùng cột trái; bấm nút <b>+</b> bên cạnh để tạo hoặc thêm project.</p>
+<table>
+  <tr><th>Loại</th><th>Dùng khi</th><th>Đặc điểm</th></tr>
+  <tr><td>💻 <b>Code (có git)</b></td><td>Viết phần mềm, game, web</td><td>Thư mục là repo git. Thư mục chưa có git thì dashboard tự tạo và lưu lần đầu.</td></tr>
+  <tr><td>🗂 <b>Điều hành (không git)</b></td><td>Quản lý nhiều thư mục, tài liệu, dữ liệu ở nơi khác trên máy</td><td>Thư mục chỉ chứa task và chat. Việc thật làm trong các "Tài nguyên" bạn khai báo. Có sẵn một agent tên <code>git</code> lo việc lưu và đẩy code.</td></tr>
+</table>
+<ul>
+  <li><b>Tạo project mới:</b> chọn loại, đặt tên, viết mô tả ngắn (giúp agent hiểu project), chọn nơi đặt rồi bấm "Tạo project".</li>
+  <li><b>Thêm project có sẵn:</b> bấm "📁 Duyệt…" hoặc "🪟 Hộp thoại Windows" để chọn thư mục, hoặc gõ đường dẫn như <code>D:\Web\my-app</code>.</li>
+  <li><b>File khung:</b> nếu project thiếu <code>AGENTS.md</code>, <code>CLAUDE.md</code>... thì trên cùng hiện dòng nhắc với nút <b>"Tạo file khung"</b> rồi <b>"Commit file khung"</b>. Bấm lần lượt là xong; dashboard không ghi đè file có sẵn.</li>
+  <li>"Xoá khỏi danh sách" chỉ bỏ project khỏi dashboard, <b>không xoá file</b> nào trên máy.</li>
+</ul>
+
+<h2 id="bat-dau">5. Bắt đầu một việc</h2>
+<p>Khi project chưa chạy, khung giữa hiện màn hình "Bắt đầu thôi" kèm đội agent sẽ chạy.</p>
+<figure><img src="img/01-man-hinh-bat-dau.jpg" alt="Màn hình bắt đầu"><figcaption>Gõ việc vào ô dưới cùng rồi bấm Gửi: đội agent tự khởi động và Lead nhận việc ngay. Muốn đổi agent hay model thì bấm "Đổi đội agent" trước.</figcaption></figure>
+<ol class="steps">
+  <li><b>Nhắn cho Lead</b> việc bạn cần, bằng lời thường. Ví dụ: <i>"Làm cho game một túi đồ 24 ô, có màn hình chọn vật phẩm và âm thanh khi nhặt đồ."</i> Có thể dán hoặc kéo thả ảnh, file vào ô nhắn.</li>
+  <li><b>Lead chia việc</b> thành các task, giao cho worker và báo lại ngắn gọn. Task hiện ở cột phải.</li>
+  <li><b>Worker làm</b>. Bạn không cần theo dõi; khi task xong hoặc bị chặn, Lead tự đọc kết quả và báo bạn.</li>
+  <li>Khi agent cần thêm quyền, chat hiện thẻ <b>"Cần bạn cho phép"</b>. Bạn bấm <b>Cho phép &amp; làm tiếp</b> (xem <a href="#quyen-chat">mục Agent xin quyền</a>).</li>
+</ol>
+<div class="tip"><b>Không biết nhắn gì?</b> Dùng các nút gợi ý phía trên ô nhắn: <b>🗂 Giao việc mới</b>, <b>📋 Tiến độ</b>, <b>💾 Lưu vào git</b>, <b>⬆️ Push GitHub</b>, <b>❓ Giải thích</b>.</div>
+
+<h2 id="man-hinh">6. Màn hình chính</h2>
+<figure><img src="img/04-tong-quan.jpg" alt="Màn hình chính"><figcaption>Cột trái: project, trạng thái, danh sách agent, nút Start / Stop và ⚙ Cài đặt. Giữa: chat với agent đang chọn. Phải: bảng Tasks.</figcaption></figure>
+<table>
+  <tr><th>Chỗ</th><th>Làm gì</th></tr>
+  <tr><td>Danh sách <b>AGENTS</b></td><td>Bấm vào một agent để mở chat với agent đó. Dấu <b>!</b> đỏ nghĩa là agent đang chờ bạn cho phép; chấm nhấp nháy nghĩa là đang làm.</td></tr>
+  <tr><td><b>▶ Start / Stop</b></td><td>Bật hoặc tắt cả đội của project. Stop đóng cuộc trò chuyện đang mở của mọi agent (task và code giữ nguyên).</td></tr>
+  <tr><td><b>Sẵn sàng / Đang làm việc…</b></td><td>Trạng thái agent đang chọn. Khi đang làm có nút <b>⏹ Dừng</b> (hoặc phím <kbd>Esc</kbd> trong ô nhắn) để dừng ngay lượt hiện tại.</td></tr>
+  <tr><td><b>🆕 Cuộc trò chuyện mới</b></td><td>Xoá nội dung chat với agent này và bắt đầu lại. Agent giữ ghi chú tóm tắt và bộ nhớ chung; task và code không bị ảnh hưởng.</td></tr>
+  <tr><td>Thanh kéo</td><td>Kéo thanh giữa chat và Tasks để đổi độ rộng; kéo thanh trên ô nhắn để đổi chiều cao. Bấm đúp để về mặc định.</td></tr>
+</table>
+
+<h3 id="chat">Khung chat</h3>
+<ul>
+  <li>Mọi thao tác agent làm được gom thành một dòng như <b>"Đã làm 4 bước · sửa 3 file"</b>. Bấm vào để xem từng bước, viết bằng lời; câu lệnh gốc chỉ hiện khi bạn bấm tiếp vào bước đó.</li>
+  <li>Câu trả lời của agent Claude <b>hiện dần</b> khi agent đang viết. Codex và Gemini hiện khi xong từng đoạn.</li>
+  <li>Ảnh và file agent nhắc tới hoặc vừa sửa hiện thành thẻ trong chat. Bấm để xem ở cột phải hoặc tải về.</li>
+  <li>Khi chọn một worker, nút gợi ý đổi thành <b>🔎 Đang làm gì?</b>, <b>▶ Làm tiếp</b>, <b>⏸ Dừng lại</b>. Bạn nhắn thẳng cho worker được; nếu bạn đổi yêu cầu, worker sẽ ghi lại vào task để Lead biết.</li>
+</ul>
+
+<h3 id="tasks">Bảng Tasks</h3>
+<ul>
+  <li>Task chia theo trạng thái: <b>Todo</b>, <b>Sẵn sàng</b>, <b>Đang làm</b>, <b>Bị chặn</b>, <b>Xong</b>. Mỗi thẻ ghi người làm và số <b>token đã dùng cho task đó</b>.</li>
+  <li>Ô lọc: <b>Đang mở</b> (mặc định), <b>Tất cả</b>, <b>Bị chặn</b>, <b>Đã xong</b>. <b>🧹 Dọn</b> cất các task đã xong vào kho lưu trữ cho gọn.</li>
+  <li><b>+ Việc mới</b>: "Nhờ lead chia việc" (mô tả, Lead tự chia) hoặc "Tự giao cho 1 worker" (bạn viết task và chọn người làm).</li>
+  <li>Bấm vào thẻ để <b>xem, sửa, giao lại hoặc xoá</b> task. Nút ✕ cạnh chữ Tasks ẩn cột này cho chat rộng hơn.</li>
+</ul>
+<figure><img src="img/16-sua-task.jpg" alt="Sửa task"><figcaption>Cửa sổ task: sửa trực tiếp nội dung file task, chọn worker rồi bấm "Giao".</figcaption></figure>
+
+<h3 id="quyen-chat">Agent xin quyền</h3>
+<p>Mặc định agent chỉ được sửa file trong project và chạy lệnh an toàn (xem file, git trên máy, lệnh kiểm tra). Khi cần hơn thế, agent dừng lại và hỏi bạn:</p>
+<figure><img src="img/07-xin-quyen.jpg" alt="Thẻ xin quyền"><figcaption>Thẻ "Cần bạn cho phép" ghi tên quyền dễ hiểu. Câu lệnh cụ thể nằm trong "Chi tiết". Bấm "Cho phép &amp; làm tiếp" là agent làm tiếp ngay.</figcaption></figure>
+<ul>
+  <li>Quyền được nhớ cho agent đó. Xem và thu hồi ở <b>⚙ Cài đặt › 🔐 Quyền</b>.</li>
+  <li>Agent-Squad <b>không có</b> chế độ bỏ qua mọi quyền. Những việc như <b>đẩy code lên GitHub</b> luôn cần bạn bấm.</li>
+  <li>Agent cũng có thể xin <b>tạo thêm agent cấp dưới</b>; dashboard hiện thẻ "Cho phép tạo" hoặc "Từ chối".</li>
+</ul>
+
+<h3 id="loi">Khi agent gặp lỗi</h3>
+<figure><img src="img/08-loi-de-hieu.jpg" alt="Thẻ lỗi"><figcaption>Lỗi được giải thích bằng lời kèm cách xử lý và nút mở đúng chỗ cần sửa. Dòng lỗi gốc nằm trong "Chi tiết lỗi".</figcaption></figure>
+<table>
+  <tr><th>Thẻ lỗi nói</th><th>Bạn làm</th></tr>
+  <tr><td>Hết hạn mức hoặc bị giới hạn tạm thời</td><td>Chờ hạn mức hồi lại, hoặc đổi agent sang tài khoản khác (<a href="#tai-khoan">Tài khoản</a>).</td></tr>
+  <tr><td>Chưa đăng nhập hoặc hết phiên</td><td>Đăng nhập lại: chạy <code>3-login.bat</code>, hoặc dùng dòng lệnh trong tab Tài khoản.</td></tr>
+  <tr><td>Chưa cài công cụ của agent</td><td>Chạy lại <code>2-setup-tools.bat</code>.</td></tr>
+  <tr><td>Không kết nối được mạng</td><td>Kiểm tra mạng rồi nhắn lại để agent làm tiếp.</td></tr>
+  <tr><td>Model không dùng được</td><td>Đổi model trong <a href="#doi-agent">Đội agent</a>.</td></tr>
+  <tr><td>Cuộc trò chuyện quá dài</td><td>Bấm <b>🆕 Cuộc trò chuyện mới</b>; agent đọc lại ghi chú và làm tiếp.</td></tr>
+</table>
+
+<h3 id="xem-file">Xem file và thay đổi</h3>
+<p>Bấm vào thẻ file trong chat để mở file ở cột phải (thay chỗ Tasks). File <code>.md</code> hiện như tài liệu, ảnh hiện cỡ lớn. Bấm ✕ để quay về Tasks.</p>
+<figure><img src="img/06-xem-thay-doi.jpg" alt="Xem thay đổi"><figcaption>Nút "Thay đổi": dòng xanh là agent thêm vào, dòng đỏ là bỏ đi, so với lần lưu git gần nhất. Nếu file đã được lưu, bạn thấy thay đổi của lần lưu gần nhất.</figcaption></figure>
+
+<h3 id="ca-doi">👥 Cả đội</h3>
+<p>Nút <b>👥 Cả đội</b> ở đầu danh sách agent mở trang tổng quan. Mỗi agent là một thẻ cho biết đang làm việc, đang chờ bạn cho phép hay đang rảnh, đang giữ task nào và tin gần nhất là gì. Bấm vào thẻ để mở chat với agent đó.</p>
+<figure><img src="img/17-ca-doi.jpg" alt="Trang Cả đội"></figure>
+
+<h3 id="hoan-tac">Hoàn tác, tìm kiếm và cảnh báo trùng file</h3>
+<ul>
+  <li><b>↩ Hoàn tác:</b> dưới tin nhắn của agent có nút "Hoàn tác n file lượt này đã đổi". Bấm vào thì các file trở về như trước lượt đó, file mới tạo bị xoá. File đã bị sửa tiếp sau đó được giữ nguyên. Lịch sử git không bị xoá. Chỉ có ở project dùng git.</li>
+  <li><b>🔍 Tìm trong chat:</b> nút kính lúp trên khung chat tìm trong toàn bộ lịch sử với agent đang chọn. Bấm một kết quả để tới tin đó.</li>
+  <li><b>⚠️ Trùng file:</b> ở thư mục chung, khi hai agent cùng sửa một file trong lúc cả hai còn đang làm, dashboard báo ngay trong chat của agent đó và của Lead.</li>
+</ul>
+
+<h2 id="cai-dat-tab">7. Cài đặt</h2>
+<p>Mọi cài đặt nằm trong nút <b>⚙ Cài đặt</b> ở góc dưới cột trái, chia thành các tab bên trái.</p>
+
+<h3 id="doi-agent">🤖 Đội agent</h3>
+<p><b>Trước khi Start</b>, tab này là bảng chọn Lead và các worker: tên, hãng (Claude Code, Codex, Gemini CLI), model, effort.</p>
+<figure><img src="img/02-doi-agent-truoc-start.jpg" alt="Đội agent trước Start"><figcaption>Bấm "+ Thêm worker" để thêm người, ✕ để bỏ. Nút điền nhanh <b>💰 Tiết kiệm / ⚖ Cân bằng / 💪 Mạnh</b> chỉ điền model và effort vào bảng; bạn vẫn bấm "Lưu" hoặc "Lưu &amp; Start".</figcaption></figure>
+<ul>
+  <li>Đặt tên worker theo việc (ví dụ <code>unity-dev</code>, <code>tester</code>, <code>frontend</code>) để Lead giao đúng người.</li>
+  <li>"mặc định" là để agent tự chọn model. Chọn "Khác…" để gõ tên model không có trong danh sách.</li>
+  <li><b>Effort</b> càng cao agent nghĩ càng kỹ và càng tốn token.</li>
+</ul>
+<p><b>Khi đang chạy</b>, tab này là danh sách agent thật, thay đổi có hiệu lực ngay và được nhớ cho lần Start sau:</p>
+<figure><img src="img/09-doi-agent-dang-chay.jpg" alt="Đội agent đang chạy"><figcaption>"✏️ Sửa" để đổi tên, model, effort, tài khoản. 🗑 để xoá agent. Kéo thả hoặc chọn "dưới …" để đổi cấp trên. Ô "Thêm agent" để thêm người giữa chừng.</figcaption></figure>
+<ul>
+  <li>Đổi model hoặc tài khoản thì agent bắt đầu cuộc trò chuyện mới. Mặc định agent <b>ghi bộ nhớ trước khi đổi</b> và đọc lại sau đó, nên không mất việc đang làm.</li>
+  <li>Xoá agent: cấp dưới chuyển lên cấp trên, task agent đang giữ trở về Todo, code được giữ lại.</li>
+  <li>Muốn đổi sang hãng khác (Claude sang Codex chẳng hạn) thì xoá rồi thêm agent mới.</li>
+</ul>
+
+<h3 id="cach-lam-viec">🧭 Cách làm việc</h3>
+<figure><img src="img/03-cach-lam-viec.jpg" alt="Cách làm việc"></figure>
+<ul>
+  <li><b>Kiểu hiển thị:</b> <b>💬 Chat</b> (khuyên dùng) như ảnh trong tài liệu này; <b>🖥 Terminal</b> hiện màn hình dòng lệnh của từng agent như bản cũ. Đổi kiểu thì Stop rồi Start lại.</li>
+  <li><b>Thư mục làm việc của agent</b> (project Code):
+    <ul>
+      <li><b>Chung một thư mục</b> (mặc định): mọi agent làm thẳng trong thư mục project, kết quả luôn ở một chỗ, không cần bước "Gộp code". Hợp với Unity hoặc đội ít agent.</li>
+      <li><b>Mỗi agent một bản riêng</b>: mỗi worker có một bản sao trong thư mục <code>&lt;project&gt;-agents/</code>; làm xong phải "Gộp code" thì kết quả mới về thư mục chính.</li>
+    </ul>
+    Chuyển từ "bản riêng" sang "chung" thì dashboard tự lưu việc đang dở, gộp vào thư mục chính rồi bỏ các bản sao. Có xung đột thì dừng lại và báo, không xoá gì.</li>
+  <li><b>⚡ context-mode</b> (thử nghiệm, tắt mặc định): giúp agent Claude không phải đọc hết các dữ liệu lớn. Đọc kỹ cảnh báo trước khi bật, vì phần này nằm ngoài nút "Cho phép".</li>
+</ul>
+
+<h3 id="tab-quyen">🔐 Quyền</h3>
+<figure><img src="img/10-quyen.jpg" alt="Tab Quyền"><figcaption>Mỗi agent một khung: quyền đã cấp thêm (thu hồi từng cái), và các nút "Cho phép trước" theo nhóm.</figcaption></figure>
+<p>Nhóm cho phép trước: <b>Python</b>, <b>.NET / Unity</b>, <b>Cài thư viện npm</b>, <b>Tải từ mạng</b>, <b>Đẩy code (git push)</b>. Với Codex chỉ có <b>Truy cập mạng</b>. Cho phép trước giúp agent đỡ phải dừng lại hỏi.</p>
+
+<h3 id="bo-nho">🧠 Bộ nhớ</h3>
+<figure><img src="img/11-bo-nho.jpg" alt="Tab Bộ nhớ"></figure>
+<ul>
+  <li><b>Bộ nhớ chung</b> (<code>.agents/memory.md</code>): quyết định, quy ước, sở thích của bạn. Mọi agent đọc phần này khi bắt đầu cuộc trò chuyện mới, và tự ghi thêm một dòng khi bạn chốt điều gì. Bạn sửa trực tiếp được; nên giữ dưới 60 dòng.</li>
+  <li><b>Tự làm mới cuộc trò chuyện:</b> cuộc trò chuyện càng dài thì mỗi bước càng tốn token. Khi vượt ngưỡng (mặc định 120k token) và có việc mới, agent ghi ghi chú rồi làm việc đó trong cuộc trò chuyện mới. Hiện chỉ đo được với agent Claude.</li>
+  <li><b>Ghi chú riêng của từng agent</b> (<code>.agents/handoff/&lt;tên&gt;.md</code>): việc đang dở. Bấm "💾 Cập nhật ngay" để agent viết lại bất cứ lúc nào.</li>
+</ul>
+
+<h3 id="tai-khoan">👤 Tài khoản</h3>
+<figure><img src="img/12-tai-khoan.jpg" alt="Tab Tài khoản"></figure>
+<p>Tạo nhiều hồ sơ đăng nhập Claude hoặc Codex (ChatGPT), mỗi hồ sơ một tài khoản. Tạo xong, dashboard hiện sẵn một dòng lệnh để dán vào Ubuntu và đăng nhập một lần. Sau đó chọn hồ sơ cho từng agent ở <b>Đội agent › ✏️ Sửa</b>. Các agent dùng tài khoản khác nhau chạy song song được, hữu ích khi một tài khoản hết hạn mức. Chỉ dùng tài khoản của bạn hoặc của đội bạn.</p>
+
+<h3 id="tai-nguyen">📁 Tài nguyên</h3>
+<figure><img src="img/13-tai-nguyen.jpg" alt="Tab Tài nguyên"></figure>
+<p>Thêm folder hoặc file nằm ngoài project mà agent cần đọc và <b>sửa tại chỗ</b>, ví dụ <code>D:\Unity\ShipMania</code>. Áp dụng từ lượt nhắn tiếp theo. Nếu nhận ra project Unity (có <code>Assets</code> và <code>ProjectSettings</code>), dashboard dặn agent không đụng <code>Library</code>, <code>Temp</code> và giữ file <code>.meta</code>, và có nút tạo <code>.gitignore</code> cho Unity.</p>
+
+<h3 id="token">📊 Token</h3>
+<figure><img src="img/14-token.jpg" alt="Tab Token"></figure>
+<ul>
+  <li>Số do chính Claude, Codex, Gemini báo về sau mỗi lượt, gồm cả lúc agent đọc file, chạy lệnh và suy nghĩ. Xem theo <b>Hôm nay / 7 ngày / Tất cả</b>.</li>
+  <li><b>Mới</b>: token đọc lần đầu. <b>Đệm</b>: token đọc lại từ bộ nhớ đệm (rẻ hơn khoảng 10 lần). <b>Trả lời</b>: token agent viết ra.</li>
+  <li><b>Quy đổi</b> = Mới + Đệm/10 + Trả lời; tỉ lệ % tính theo cột này. <b>TB/lượt</b> là trung bình mỗi lượt.</li>
+  <li>Dashboard không biết hạn mức còn lại của gói bạn đang dùng.</li>
+</ul>
+
+<h3 id="he-thong">🖥 Hệ thống</h3>
+<figure><img src="img/15-he-thong.jpg" alt="Tab Hệ thống"></figure>
+<ul>
+  <li><b>🔔 Báo:</b> bật tiếng và thông báo khi task xong, bị chặn, agent cần quyền hoặc Lead trả lời xong.</li>
+  <li><b>Tự cuộn xuống cuối</b> và <b>cửa sổ "watch"</b> (chỉ kiểu Terminal).</li>
+  <li><b>Giao diện:</b> chọn nền Sáng, Tối, hoặc Theo máy.</li>
+  <li><b>🩺 Kiểm tra máy:</b> xem công cụ đã cài và đã đăng nhập chưa, kèm cách xử lý. Nút "Thử gọi thật" gửi cho agent một câu rất ngắn để chắc chắn agent trả lời được.</li>
+  <li><b>⟳ Cập nhật</b> và <b>↻ Khởi động lại</b> (xem <a href="#hang-ngay">mục 3</a>).</li>
+</ul>
+
+<h2 id="tiet-kiem">8. Mẹo tiết kiệm token</h2>
+<ul>
+  <li><b>Nhắn một lần, đủ ý.</b> Mỗi tin nhắn là một lượt của Lead. Gom yêu cầu lại thay vì nhắn nhiều tin nhỏ.</li>
+  <li><b>Lead dùng model nhẹ.</b> Lead chỉ chia việc và đọc tóm tắt; bấm "💰 Tiết kiệm" hoặc "⚖ Cân bằng" trong Đội agent.</li>
+  <li><b>Cho phép trước</b> các nhóm quyền hay dùng để agent không phải dừng lại rồi chạy lại.</li>
+  <li><b>Giữ bộ nhớ chung ngắn gọn</b>: nó được đọc ở đầu mọi cuộc trò chuyện mới.</li>
+  <li><b>Bấm 🆕 Cuộc trò chuyện mới</b> khi chuyển sang việc khác hẳn; cuộc trò chuyện dài thì mỗi bước đều đắt hơn.</li>
+  <li>Dashboard đã tự làm sẵn: chép kết quả task vào tin báo cho Lead (Lead không phải mở file), gộp nhiều task xong cùng lúc vào một lượt, tự làm mới cuộc trò chuyện quá dài.</li>
+  <li>Xem cột "token" trên thẻ task để biết việc nào tốn nhất.</li>
+</ul>
+
+<h2 id="hoi-dap">9. Hỏi đáp và sự cố</h2>
+<details><summary>Dashboard không mở được</summary><p>Mở cửa sổ "Agent-Squad server" trên taskbar để xem lỗi. Nếu đã đóng nó, double-click lại <code>Agent-Squad.bat</code>. Lỗi "dashboard không chạy sau 40 giây" thường do Ubuntu chưa khởi động xong; thử lại lần nữa.</p></details>
+<details><summary>Agent không làm gì sau khi tôi nhắn</summary><p>Xem trạng thái ở đầu khung chat. Nếu có dấu <b>!</b> đỏ ở tên một agent, agent đó đang chờ bạn cho phép. Nếu đang "Đang làm việc…" quá lâu, bấm <b>⏹ Dừng</b> rồi nhắn lại. Nếu "chưa chạy", bấm <b>▶ Start</b> hoặc gửi tin để tự khởi động.</p></details>
+<details><summary>Task cứ nằm ở "Bị chặn"</summary><p>Bấm vào thẻ task, đọc phần "Notes / questions": worker ghi lý do ở đó (thiếu file, cần quyết định...). Trả lời bằng cách nhắn cho Lead hoặc nhắn thẳng worker, rồi bấm "▶ Làm tiếp".</p></details>
+<details><summary>Code của worker không thấy trong thư mục project</summary><p>Bạn đang dùng "Mỗi agent một bản riêng". Nhắn Lead "Gộp code" (hoặc bấm gợi ý 🔀 Gộp code), hoặc chuyển sang "Chung một thư mục" trong <a href="#cach-lam-viec">Cách làm việc</a>.</p></details>
+<details><summary>Hết hạn mức giữa chừng</summary><p>Tạo thêm hồ sơ ở tab <a href="#tai-khoan">Tài khoản</a>, rồi đổi tài khoản cho agent đó ở Đội agent. Agent ghi bộ nhớ trước khi đổi; nếu không ghi được, dashboard lấy phần cuối lịch sử chat thay thế.</p></details>
+<details><summary>Agent quên những gì đã thống nhất</summary><p>Ghi điều đó vào <b>Bộ nhớ chung</b> (tab <a href="#bo-nho">Bộ nhớ</a>), hoặc nói với Lead "ghi nhớ: …". Mọi agent đọc phần này khi bắt đầu cuộc trò chuyện mới.</p></details>
+<details><summary>Có xoá được file của tôi không?</summary><p>Agent sửa được file trong project và trong Tài nguyên bạn khai báo. Lệnh nguy hiểm hơn (đẩy code, cài thư viện, tải từ mạng...) cần bạn bấm cho phép. Nên dùng git và lưu thường xuyên (gợi ý "💾 Lưu vào git") để quay lại được bất cứ lúc nào.</p></details>
+
+<h2 id="phu-luc">10. Phụ lục</h2>
+<h3>File và thư mục trong project</h3>
+<table>
+  <tr><th>Đường dẫn</th><th>Nội dung</th></tr>
+  <tr><td><code>AGENTS.md</code></td><td>Quy tắc chung cho mọi agent.</td></tr>
+  <tr><td><code>CLAUDE.md</code></td><td>Quy tắc thêm cho Lead.</td></tr>
+  <tr><td><code>.agents/tasks/T-*.md</code></td><td>File task. Mẫu: <code>_template.md</code>.</td></tr>
+  <tr><td><code>.agents/memory.md</code></td><td>Bộ nhớ chung.</td></tr>
+  <tr><td><code>.agents/handoff/&lt;tên&gt;.md</code></td><td>Ghi chú riêng của từng agent.</td></tr>
+  <tr><td><code>.agents/chat/</code></td><td>Lịch sử chat và thống kê token (<code>usage.json</code>).</td></tr>
+  <tr><td><code>.agents/uploads/</code></td><td>Ảnh, file bạn đính kèm (tối đa 20 MB mỗi file).</td></tr>
+  <tr><td><code>.agents/hierarchy.txt</code></td><td>Ai là cấp trên của ai.</td></tr>
+  <tr><td><code>~/.agent-squad/</code></td><td>Danh sách project và hồ sơ tài khoản (trong Ubuntu).</td></tr>
+  <tr><td><code>dashboard/catalog.json</code></td><td>Danh sách model và effort hiện trong bảng chọn.</td></tr>
+</table>
+<h3>Một task trông như thế nào</h3>
+<pre style="background:var(--code);padding:12px 14px;border-radius:8px;max-width:760px;overflow:auto;font-size:13px"># T-2: Màn hình chọn vật phẩm
+Status: in-progress        (todo, ready, in-progress, blocked, done)
+Owner: unity-dev
+Created by: lead
+Parent: none
+
+## Goal
+## Files you may edit
+## Context (link files, do not paste)
+## Done when (checks to run)
+## Notes / questions
+## Changes by human
+## Result (worker fills, max 5 lines)</pre>
+<p>Lead giao việc bằng cách đặt <code>Owner</code> và <code>Status: ready</code>; dashboard tự gọi worker. Worker đặt <code>Status: done</code> hoặc <code>blocked</code> khi xong, dashboard tự báo cấp trên.</p>
+<h3>Chạy bằng dòng lệnh (không cần dashboard)</h3>
+<p>Dành cho người quen terminal, trong Ubuntu:</p>
+<pre style="background:var(--code);padding:12px 14px;border-radius:8px;max-width:760px;overflow:auto;font-size:13px">scripts/start-agents.sh
+LEAD="claude@sonnet" WORKERS="unity-dev=codex claude@opus#high" scripts/start-agents.sh
+tmux attach -t agents</pre>
+<p>Mỗi agent viết dạng <code>[tên=]hãng[@model][#effort]</code>. Giao task: <code>scripts/assign.sh T-3 unity-dev</code>.</p>
+<p style="color:var(--muted);font-size:14px;margin-top:40px">Tài liệu cho Agent-Squad bản tháng 11/2026. Ảnh chụp từ một project mẫu; giao diện trên máy bạn có thể khác đôi chút.</p>
+</main>
+</div>
+</body>
+</html>
