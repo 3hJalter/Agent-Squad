@@ -72,6 +72,29 @@ function cmdLabel(pre) {
   if (m) return CMD_NAMES['git ' + m[1]] || `git ${m[1]} kèm tuỳ chọn riêng`;
   return CMD_NAMES[pre] || `lệnh "${pre}"`;
 }
+// Claude Code luôn chặn lệnh ghép có cả "cd" lẫn "git" (chống tấn công bằng repo giả), kể cả khi đã cho phép:
+// nút "Cho phép" không mở được nên không xin quyền cho nó, mà nhắc agent dùng "git -C <thư mục>".
+function cdWithGit(cmd) {
+  const heads = bareShell(cmd).split(/&&|\|\||;|\||\n/).map((part) => {
+    const w = part.trim().split(/\s+/).filter(Boolean);
+    while (w.length && (SH_WORDS.has(w[0]) || /^[A-Za-z_]\w*=/.test(w[0]))) w.shift();
+    return w[0] || '';
+  });
+  return heads.includes('cd') && heads.includes('git');
+}
+const CD_GIT_RETRY = 'Your command that combined `cd` with `git` was blocked by Claude Code\'s built-in safety check; it can never be allowed, so do not ask for it. ' +
+  'Retry the blocked git step(s) without cd: in your working folder run `git <command>` directly; for another folder run `git -C <absolute path> <command>`. Then continue the task.';
+// Lệnh git an toàn cho repo ở thư mục khác: "git -C <thư mục> status"… (quyền "git status" của Claude không khớp dạng -C).
+const GIT_SAFE_SUBS = SAFE_CMDS.filter((c) => c.startsWith('git ')).map((c) => c.slice(4));
+function gitCRules(dirs) {
+  const out = [];
+  for (const d of new Set(dirs.filter(Boolean))) {
+    if (/[()\n"'\\]/.test(d)) continue; // không ghi được thành quy tắc quyền
+    const forms = /\s/.test(d) ? [`"${d}"`, `'${d}'`] : [d];
+    for (const f of forms) for (const sub of GIT_SAFE_SUBS) out.push(`git -C ${f} ${sub}`);
+  }
+  return out;
+}
 // Mô tả một câu lệnh bằng lời cho người không rành kỹ thuật (câu lệnh thật vẫn nằm trong phần chi tiết của bước).
 const CMD_SAY = [
   [/^(ls|find|cat|head|tail|wc|stat|pwd|test)$/, 'Xem file và thư mục'], [/^(grep|rg)$/, 'Tìm trong nội dung file'],
@@ -97,7 +120,10 @@ function sayCmd(cmd) {
   return best || 'Chạy lệnh';
 }
 const SHELL_NOTE = ' SHELL COMMANDS: commands are checked one by one against an allow-list, so keep them simple: plain commands joined with && only. ' +
-  'No shell variables, no $(...), no heredocs, no `git -c` or `git -C` (use `cd <dir> && git ...`; the git author name and email are already set for you). ' +
+  'No shell variables, no $(...), no heredocs, no `git -c` (the git author name and email are already set for you). ' +
+  'GIT: never put `cd` and `git` in the same command: Claude Code always blocks `cd <dir> && git ...` for safety and the human cannot allow it. ' +
+  'Your shell already starts in your working folder, so run git there directly (`git status`). For a git repo in another folder use exactly `git -C <absolute path> <command>` ' +
+  '(no other option between the path and the command). ' +
   'To run a script, write it to a file with your file tool, then run the file. If a command is blocked, do not retry it in another shape: say what you need in one plain sentence.';
 
 // Trả lời gọn: không kể lể từng bước, chỉ báo khi xong / bị chặn / cần hỏi.
@@ -122,7 +148,7 @@ const EFFORT_RE = /^[a-z]{0,12}$/;
 const OFFICE_NOTE = ' OFFICE PROJECT: your working folder is a plain office folder, not a git repo, and every agent works in it directly. ' +
   'There are no branches, worktrees or merges: skip the task-protocol steps about committing, merging or branches. Real work happens in the RESOURCES folders.';
 const GIT_ROLE = ' YOU ARE THE GIT AGENT. Your only job is git on the resource folders listed above (status, diff, add, commit, pull, merge, push). Never edit file contents. ' +
-  'Run commands as `cd <repo> && git <command>`. For a task: look at `git status` and `git diff --stat` first; stage only what the task names, or all changes if it names none ' +
+  'Run commands as `git -C <repo> <command>` (never `cd <repo> && git ...`: that is always blocked). For a task: look at `git status` and `git diff --stat` first; stage only what the task names, or all changes if it names none ' +
   '(but ask before committing anything surprising such as large binaries or build output); commit with a clear message; pull only if asked (`git pull --no-rebase`) and never resolve conflicts yourself: ' +
   'on a conflict run `git merge --abort`, set the task Status: blocked and name the conflicting files. Push only when asked. Never force-push, never `git reset --hard`, never delete branches. ' +
   'Push needs the human to click Allow: if it is blocked, say so in one line.';
@@ -311,9 +337,10 @@ module.exports = function setupChat({ on, send, readBody, getCtx, loadProjects, 
     const lead = name === 'lead';
     const tools = grants.filter((g) => g !== 'network');
     const extraDir = path.join(ctx.root, '.agents');
+    const gitC = gitCRules([a.cwd, ctx.kind === 'office' ? '' : ctx.root, ...resourceInfo(ctx).filter((r) => r.isRepo).map((r) => r.path)]);
     if (a.agent === 'claude') {
       const args = ['-p', '--output-format', 'stream-json', '--verbose', ...(noPartial ? [] : ['--include-partial-messages']), '--permission-mode', 'acceptEdits',
-        '--allowedTools', ...CLAUDE_TOOLS, ...tools, ...(useCm(ctx, a) ? ['mcp__' + CM_SERVER] : []),
+        '--allowedTools', ...CLAUDE_TOOLS, ...gitC.map((c) => `Bash(${c}:*)`), ...tools, ...(useCm(ctx, a) ? ['mcp__' + CM_SERVER] : []),
         ...(useCm(ctx, a) ? ['--mcp-config', CM_MCP] : []), '--add-dir', extraDir, ...resDirs(ctx),
         '--append-system-prompt', sysPrompt(ctx, name, a, extraDir)];
       if (a.model) args.push('--model', a.model);
@@ -336,7 +363,7 @@ module.exports = function setupChat({ on, send, readBody, getCtx, loadProjects, 
       return { cmd: 'codex', args };
     }
     const args = ['--output-format', 'stream-json', '--approval-mode', 'auto_edit', '--include-directories', [extraDir, ...resDirs(ctx)].join(','),
-      '--allowed-tools', ...GEMINI_TOOLS, ...tools];
+      '--allowed-tools', ...GEMINI_TOOLS, ...gitC.map((c) => `run_shell_command(${c})`), ...tools];
     if (a.model) args.push('-m', a.model);
     if (session) args.push('--resume', session);
     args.push('--prompt=' + first);
@@ -433,12 +460,18 @@ module.exports = function setupChat({ on, send, readBody, getCtx, loadProjects, 
           raw = { usage: u, modelUsage: ev.modelUsage, total_cost_usd: ev.total_cost_usd };
           if (ev.is_error && ev.result) msg.error = short(ev.result, 600);
           if (!msg.text && ev.result && !ev.is_error) msg.text = ev.result;
-          let complex = false;
+          let complex = false, cdGit = false;
           for (const d of ev.permission_denials || []) {
             const s0 = byId.get(d.tool_use_id);
             if (s0) Object.assign(s0, { icon: '⛔', error: true, denied: true, detail: toolStep(d.tool_name, d.tool_input).detail });
             else steps.push({ ...toolStep(d.tool_name, d.tool_input), icon: '⛔', error: true, denied: true });
             const cmd = d.tool_input?.command;
+            if (d.tool_name === 'Bash' && cmd && cdWithGit(cmd)) {
+              // agent đã tự chạy lại git thành công sau bước bị chặn thì thôi, không nhắc lại
+              const i = s0 ? steps.indexOf(s0) : -1;
+              if (!steps.slice(i + 1).some((s) => !s.error && /\bgit\b/.test(s.detail || '') && !cdWithGit(s.detail || ''))) cdGit = true;
+              continue;
+            }
             if (d.tool_name === 'Bash' && cmd) {
               const pre = prefixesOf(cmd);
               if (pre.length) for (const x of pre) want(`Bash(${x}:*)`, cmdLabel(x), cmd);
@@ -447,7 +480,10 @@ module.exports = function setupChat({ on, send, readBody, getCtx, loadProjects, 
             }
             else if (d.tool_name) want(d.tool_name, `dùng công cụ ${d.tool_name}` + (d.tool_input?.file_path ? ` (${d.tool_input.file_path})` : d.tool_input?.url ? ` (${d.tool_input.url})` : ''));
           }
-          if (complex && !msg.grants?.length) msg.note = 'Agent dùng một lệnh ghép quá phức tạp nên bị chặn. Nhắn "làm lại bằng các lệnh đơn giản" để agent thử cách khác.';
+          if (cdGit) {
+            Object.defineProperty(msg, 'cdGit', { value: true, enumerable: false });
+            msg.note = 'Claude Code luôn chặn lệnh "cd … && git …" vì lý do an toàn, nút Cho phép không mở được loại lệnh này. Dashboard đã tự nhắc agent chạy lại bằng "git -C <thư mục> …".';
+          } else if (complex && !msg.grants?.length) msg.note = 'Agent dùng một lệnh ghép quá phức tạp nên bị chặn. Nhắn "làm lại bằng các lệnh đơn giản" để agent thử cách khác.';
         }
       } else if (agent === 'codex') {
         if (ev.type === 'thread.started' && ev.thread_id) onSession(ev.thread_id);
@@ -625,6 +661,7 @@ module.exports = function setupChat({ on, send, readBody, getCtx, loadProjects, 
     }
     async function finish() {
       let turnFiles = [];
+      const stopped = L.stopped;
       delete msg.running; delete msg.draft; L.child = null; L.msg = null; L.stopped = false;
       if (!msg.text && !msg.error && !msg.steps.length) msg.text = '(không có trả lời)';
       try { const fl = filesOf(ctx, a, msg); if (fl.length) msg.files = fl; } catch { /* không bắt buộc */ }
@@ -653,6 +690,8 @@ module.exports = function setupChat({ on, send, readBody, getCtx, loadProjects, 
       if (msg.usage) { try { addUsage(ctx, name, a, msg.usage, !!msg.cm, raw, job.taskId ? [job.taskId] : job.costTasks || (tasksBefore ? [...taskIds(ctx)].filter((x) => !tasksBefore.has(x)) : [])); } catch (e) { console.error('usage:', e.message); } }
       addMessage(ctx, name, msg);
       if (after) after();
+      // lệnh "cd && git" bị chặn: nhắc agent làm lại bằng git -C, mỗi lần chỉ nhắc một lượt để không lặp mãi
+      if (msg.cdGit && !job.cdGitRetry && !stopped) L.queue.unshift({ text: CD_GIT_RETRY, display: { role: 'system', text: '🔁 Nhắc agent chạy lại lệnh git không kèm "cd".' }, cdGitRetry: true });
       try {
         const pre = await preSnap;
         if (pre) {
@@ -1401,14 +1440,19 @@ module.exports = function setupChat({ on, send, readBody, getCtx, loadProjects, 
     if (!msg || !msg.grants) return send(res, 404, { error: 'Không tìm thấy yêu cầu quyền' });
     const pick = msg.grants.filter((g) => !Array.isArray(b.ids) || b.ids.includes(g.id));
     if (!pick.length) return send(res, 400, { error: 'Không có quyền nào được chọn' });
+    // quyền cho lệnh "cd … && git …" (thẻ cũ) không có tác dụng: không lưu, chỉ nhắc agent dùng git -C
+    const useless = pick.filter((g) => /^Bash\(/.test(g.id) && cdWithGit(g.id.slice(5, -1)));
+    const keep = pick.filter((g) => !useless.includes(g));
     const st = loadState(ctx);
     st.grants = st.grants || {};
-    st.grants[name] = [...new Set([...(st.grants[name] || []), ...pick.map((g) => g.id)])];
+    st.grants[name] = [...new Set([...(st.grants[name] || []), ...keep.map((g) => g.id)])];
     saveState(ctx, st);
     msg.granted = true; rewrite(ctx, name);
-    if (b.retry !== false) {
-      enqueue(ctx, name, `The human granted the permission(s) you were missing: ${pick.map((g) => g.id).join(', ')}. Retry the blocked step(s) with simple commands (see SHELL COMMANDS) and continue the task.`,
-        { role: 'system', text: `✅ Đã cho phép ${pick.length} quyền. Agent làm tiếp…` });
+    if (b.retry !== false && !keep.length) {
+      enqueue(ctx, name, CD_GIT_RETRY, { role: 'system', text: '🔁 Lệnh "cd … && git …" luôn bị Claude Code chặn, bấm Cho phép không mở được. Đã nhắc agent chạy lại bằng "git -C <thư mục> …".' });
+    } else if (b.retry !== false) {
+      enqueue(ctx, name, `The human granted the permission(s) you were missing: ${keep.map((g) => g.id).join(', ')}. Retry the blocked step(s) with simple commands (see SHELL COMMANDS) and continue the task.` + (useless.length ? ' ' + CD_GIT_RETRY : ''),
+        { role: 'system', text: `✅ Đã cho phép ${keep.length} quyền. Agent làm tiếp…` });
     }
     send(res, 200, { ok: true, grants: st.grants[name] });
   });
@@ -1493,4 +1537,4 @@ module.exports = function setupChat({ on, send, readBody, getCtx, loadProjects, 
 
   return { start, stopAll, info, listRequests, killAll, busyCount, toShared, resolveFile, MAX_FILE, resourceInfo, isActive: (ctx) => !!loadState(ctx).active };
 };
-module.exports._test = { prefixesOf, cmdLabel, sayCmd, bareShell };
+module.exports._test = { prefixesOf, cmdLabel, sayCmd, bareShell, cdWithGit, gitCRules };

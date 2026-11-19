@@ -28,3 +28,22 @@ test('labels and step titles are plain Vietnamese', () => {
   assert.strictEqual(sayCmd('git status'), 'Xem tình trạng git');
   assert.strictEqual(sayCmd('npm install lodash'), 'Cài thư viện');
 });
+test('cd + git in one command is detected (Claude Code always blocks it)', () => {
+  const { cdWithGit } = require('../chat')._test;
+  assert.strictEqual(cdWithGit('cd /mnt/d/Game && git status'), true);
+  assert.strictEqual(cdWithGit('cd a; git diff --stat'), true);
+  assert.strictEqual(cdWithGit('git status'), false);
+  assert.strictEqual(cdWithGit('git -C /mnt/d/Game status'), false);
+  assert.strictEqual(cdWithGit('cd a && npm test'), false);
+  assert.strictEqual(cdWithGit('echo "cd x && git y"'), false);
+});
+test('git -C rules cover safe git commands for each repo folder, never push', () => {
+  const { gitCRules } = require('../chat')._test;
+  const r = gitCRules(['/mnt/d/Game', '/mnt/d/Game', '/mnt/d/My Game', '/bad(x)']);
+  assert.ok(r.includes('git -C /mnt/d/Game status'));
+  assert.ok(r.includes('git -C "/mnt/d/My Game" commit'));
+  assert.ok(r.includes("git -C '/mnt/d/My Game' diff"));
+  assert.ok(!r.some((x) => / push$/.test(x)));
+  assert.ok(!r.some((x) => x.includes('(x)')));
+  assert.strictEqual(r.filter((x) => x === 'git -C /mnt/d/Game status').length, 1);
+});
